@@ -4,6 +4,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
+import com.ourlittlelife.game.day.describeShortfall
 import com.ourlittlelife.rules.Action
 import com.ourlittlelife.rules.ActionResult
 import com.ourlittlelife.rules.Camp
@@ -65,6 +66,8 @@ class GameViewModel : ViewModel() {
             }
             UseResult.UsedUp ->
                 message = "That ${obj.kind.label.lowercase()} needs to grow back. Try another, or come back tomorrow."
+            is UseResult.Missing ->
+                message = describeShortfall(result.shortfall) + " in the chest."
             is UseResult.Refused -> message = when (result.reason) {
                 is ActionResult.NotEnoughTime -> "Not enough time left today for that. Try something shorter, or go to bed."
                 else -> "${character.name} is asleep."

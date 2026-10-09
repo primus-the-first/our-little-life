@@ -5,6 +5,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -30,6 +32,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.ourlittlelife.game.day.describe
+import com.ourlittlelife.game.day.describeShortfall
 import com.ourlittlelife.game.day.formatDuration
 import com.ourlittlelife.game.day.formatTime
 import com.ourlittlelife.game.day.moodWord
@@ -191,12 +194,18 @@ private fun Hud(clock: Clock, name: String, mood: Int, onOpenNeeds: () -> Unit, 
     }
 }
 
-/** What's in the shared chest, always in view. */
+/** What's in the shared chest, always in view. Refined materials appear once there are some. */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ResourceStrip(storage: Storage, modifier: Modifier = Modifier) {
     val colors = OllTheme.colors
-    Row(modifier = modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Resource.entries.forEach { resource ->
+    val shown = Resource.entries.filter { !it.refined || storage[it] > 0 }
+    FlowRow(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        shown.forEach { resource ->
             Row(
                 modifier = Modifier
                     .clip(RoundedCornerShape(6.dp))
@@ -265,14 +274,16 @@ private fun ObjectSheet(obj: PlotObject, viewModel: GameViewModel, minutesLeft: 
                 else -> actions.forEach { action ->
                     val fits = action.minutes <= minutesLeft
                     val grown = usesLeft > 0
+                    val short = viewModel.camp.storage.shortfall(action.costs)
                     SecondaryButton(
                         text = action.name,
                         detail = when {
                             !grown -> "Grows back tomorrow"
+                            short.isNotEmpty() -> describeShortfall(short)
                             !fits -> "Not enough time today"
                             else -> describe(action)
                         },
-                        enabled = fits && grown,
+                        enabled = fits && grown && short.isEmpty(),
                         onClick = { viewModel.perform(obj, action) },
                         modifier = Modifier.fillMaxWidth(),
                     )
@@ -282,10 +293,7 @@ private fun ObjectSheet(obj: PlotObject, viewModel: GameViewModel, minutesLeft: 
     }
 }
 
-private fun comingSoon(kind: ObjectKind): String = when (kind) {
-    ObjectKind.WORKBENCH -> "Making planks, bricks and cloth arrives in the next update."
-    else -> "Nothing to do here yet."
-}
+private fun comingSoon(kind: ObjectKind): String = "Nothing to do here yet."
 
 @Composable
 private fun ChestContents(storage: Storage) {

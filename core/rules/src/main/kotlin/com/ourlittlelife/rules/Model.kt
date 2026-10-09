@@ -47,7 +47,7 @@ data class Clock(val day: Int, val minute: Int) {
 
 /**
  * Something a character can spend time on. Effects are added on top of the normal hourly drop;
- * yields are resources that go into the shared chest.
+ * costs are taken from the shared chest and yields go into it.
  */
 data class Action(
     val id: String,
@@ -55,13 +55,17 @@ data class Action(
     val minutes: Int,
     val effects: Map<Need, Int> = emptyMap(),
     val yields: Map<Resource, Int> = emptyMap(),
+    val costs: Map<Resource, Int> = emptyMap(),
 )
 
-/** Raw materials gathered on the plot. */
-enum class Resource(val label: String) {
+/** Materials: raw ones are gathered on the plot, refined ones are made at the workbench. */
+enum class Resource(val label: String, val refined: Boolean = false) {
     WOOD("Wood"),
     STONE("Stone"),
     FIBER("Fiber"),
+    PLANKS("Planks", refined = true),
+    BRICKS("Bricks", refined = true),
+    CLOTH("Cloth", refined = true),
 }
 
 /** The shared storage chest: how much of each resource the pair has. */
@@ -69,8 +73,19 @@ data class Storage(private val amounts: Map<Resource, Int> = emptyMap()) {
 
     operator fun get(resource: Resource): Int = amounts[resource] ?: 0
 
+    // Zero amounts are dropped, so an empty chest always equals Storage().
     fun plus(added: Map<Resource, Int>): Storage =
-        Storage(Resource.entries.associateWith { this[it] + (added[it] ?: 0) })
+        Storage(Resource.entries.associateWith { this[it] + (added[it] ?: 0) }.filterValues { it != 0 })
+
+    /** Takes [taken] out of the chest. Call [shortfall] first: the chest never goes below zero. */
+    fun minus(taken: Map<Resource, Int>): Storage {
+        require(shortfall(taken).isEmpty()) { "Not enough in the chest for $taken" }
+        return Storage(Resource.entries.associateWith { this[it] - (taken[it] ?: 0) }.filterValues { it != 0 })
+    }
+
+    /** How much more of each resource is needed to cover [needed]; empty when there's enough. */
+    fun shortfall(needed: Map<Resource, Int>): Map<Resource, Int> =
+        needed.mapValues { (resource, amount) -> amount - this[resource] }.filterValues { it > 0 }
 }
 
 data class Character(

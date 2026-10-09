@@ -23,6 +23,9 @@ sealed interface UseResult {
     /** This spot has given all it can today. */
     data object UsedUp : UseResult
 
+    /** The chest is short of these amounts. */
+    data class Missing(val shortfall: Map<Resource, Int>) : UseResult
+
     data class Refused(val reason: ActionResult) : UseResult
 }
 
@@ -41,17 +44,18 @@ data class Camp(
     /** A character uses an object on the plot. Nothing changes unless the action succeeds. */
     fun use(character: Character, obj: PlotObject, action: Action): UseResult {
         require(action in ObjectActions.forKind(obj.kind)) { "${obj.kind.label} doesn't offer ${action.name}" }
-        val gathers = action.yields.isNotEmpty()
-        if (gathers && usesLeft(obj) <= 0) return UseResult.UsedUp
+        val limited = Gathering.usesPerDay(obj.kind) != Int.MAX_VALUE
+        if (limited && usesLeft(obj) <= 0) return UseResult.UsedUp
+        val short = storage.shortfall(action.costs)
+        if (short.isNotEmpty()) return UseResult.Missing(short)
 
         return when (val result = Rules.perform(character, action)) {
             is ActionResult.Done -> UseResult.Done(
                 character = result.character,
-                camp = if (gathers) {
-                    copy(storage = storage.plus(action.yields), usesToday = usesToday + (obj.id to (usesToday[obj.id] ?: 0) + 1))
-                } else {
-                    this
-                },
+                camp = copy(
+                    storage = storage.minus(action.costs).plus(action.yields),
+                    usesToday = if (limited) usesToday + (obj.id to (usesToday[obj.id] ?: 0) + 1) else usesToday,
+                ),
             )
             else -> UseResult.Refused(result)
         }

@@ -70,7 +70,8 @@ object ObjectActions {
         ObjectKind.TREE -> listOf(Gathering.chop)
         ObjectKind.ROCK -> listOf(Gathering.breakRock)
         ObjectKind.BUSH -> listOf(Gathering.pickFiber)
-        // Crafting arrives with the workbench; the chest just shows what's stored.
-        ObjectKind.WORKBENCH, ObjectKind.CHEST -> emptyList()
+        ObjectKind.WORKBENCH -> listOf(Refining.sawPlanks, Refining.fireBricks, Refining.weaveCloth)
+        // The chest just shows what's stored.
+        ObjectKind.CHEST -> emptyList()
     }
 }

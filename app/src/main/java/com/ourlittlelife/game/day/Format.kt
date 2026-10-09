@@ -1,6 +1,7 @@
 package com.ourlittlelife.game.day
 
 import com.ourlittlelife.rules.Action
+import com.ourlittlelife.rules.Resource
 
 /** 990 → "4:30 pm" */
 fun formatTime(minuteOfDay: Int): String {
@@ -22,14 +23,23 @@ fun formatDuration(minutes: Int): String {
     }
 }
 
-/** "1h · +45 Hunger, +5 Fun", or for gathering "1h · +6 Wood · -6 Energy" */
+/** "1h · +45 Hunger, +5 Fun", gathering "1h · +6 Wood · -6 Energy", a recipe "1h · 10 Wood → 5 Planks · -4 Energy" */
 fun describe(action: Action): String {
-    val yields = action.yields.entries.joinToString(", ") { (resource, amount) -> "+$amount ${resource.label}" }
+    val made = action.yields.entries.joinToString(", ") { (resource, amount) -> "$amount ${resource.label}" }
+    val yields = when {
+        action.yields.isEmpty() -> ""
+        action.costs.isEmpty() -> action.yields.entries.joinToString(", ") { (resource, amount) -> "+$amount ${resource.label}" }
+        else -> action.costs.entries.joinToString(", ") { (resource, amount) -> "$amount ${resource.label}" } + " → " + made
+    }
     val effects = action.effects.entries.joinToString(", ") { (need, change) ->
         (if (change > 0) "+" else "") + "$change ${need.label}"
     }
     return listOf(formatDuration(action.minutes), yields, effects).filter { it.isNotEmpty() }.joinToString(" · ")
 }
+
+/** "Need 4 more wood" or "Need 4 more wood and 2 more stone" */
+fun describeShortfall(shortfall: Map<Resource, Int>): String =
+    "Need " + shortfall.entries.joinToString(" and ") { (resource, amount) -> "$amount more ${resource.label.lowercase()}" }
 
 fun moodWord(mood: Int): String = when {
     mood >= 70 -> "Cheerful"
