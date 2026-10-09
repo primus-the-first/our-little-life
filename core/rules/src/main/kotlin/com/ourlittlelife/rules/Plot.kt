@@ -67,7 +67,10 @@ object ObjectActions {
         ObjectKind.CAMPFIRE -> listOf(StarterActions.cook, StarterActions.snack, StarterActions.stargaze)
         ObjectKind.WASHBASIN -> listOf(StarterActions.wash)
         ObjectKind.SIGNPOST -> listOf(StarterActions.work)
-        // Crafting, storage and gathering arrive with the next checklist items.
-        ObjectKind.WORKBENCH, ObjectKind.CHEST, ObjectKind.TREE, ObjectKind.ROCK, ObjectKind.BUSH -> emptyList()
+        ObjectKind.TREE -> listOf(Gathering.chop)
+        ObjectKind.ROCK -> listOf(Gathering.breakRock)
+        ObjectKind.BUSH -> listOf(Gathering.pickFiber)
+        // Crafting arrives with the workbench; the chest just shows what's stored.
+        ObjectKind.WORKBENCH, ObjectKind.CHEST -> emptyList()
     }
 }

@@ -16,6 +16,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -38,9 +39,13 @@ import com.ourlittlelife.game.ui.components.SecondaryButton
 import com.ourlittlelife.game.ui.theme.OllTheme
 import com.ourlittlelife.game.ui.theme.OllType
 import com.ourlittlelife.rules.Clock
+import com.ourlittlelife.rules.Gathering
 import com.ourlittlelife.rules.Need
 import com.ourlittlelife.rules.ObjectKind
 import com.ourlittlelife.rules.PlotObject
+import com.ourlittlelife.rules.Resource
+import com.ourlittlelife.rules.Storage
+import kotlinx.coroutines.delay
 
 @Composable
 fun HomeScreen(viewModel: GameViewModel = viewModel()) {
@@ -48,6 +53,14 @@ fun HomeScreen(viewModel: GameViewModel = viewModel()) {
     val character = viewModel.character
     val clock = character.clock
     var needsOpen by remember { mutableStateOf(false) }
+
+    // Notices sit over the bottom of the map, so they fade out on their own instead of blocking taps.
+    LaunchedEffect(viewModel.message) {
+        if (viewModel.message != null) {
+            delay(3500)
+            viewModel.clearMessage()
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -60,7 +73,12 @@ fun HomeScreen(viewModel: GameViewModel = viewModel()) {
             name = character.name,
             mood = character.needs.mood,
             onOpenNeeds = { needsOpen = true },
-            modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 12.dp),
+            modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 8.dp),
+        )
+
+        ResourceStrip(
+            storage = viewModel.camp.storage,
+            modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
         )
 
         Box(
@@ -92,7 +110,7 @@ fun HomeScreen(viewModel: GameViewModel = viewModel()) {
                     text = note,
                     low = viewModel.message == null,
                     modifier = Modifier
-                        .align(Alignment.BottomCenter)
+                        .align(Alignment.TopCenter)
                         .padding(12.dp)
                         .clickable(onClick = viewModel::clearMessage),
                 )
@@ -173,6 +191,28 @@ private fun Hud(clock: Clock, name: String, mood: Int, onOpenNeeds: () -> Unit, 
     }
 }
 
+/** What's in the shared chest, always in view. */
+@Composable
+private fun ResourceStrip(storage: Storage, modifier: Modifier = Modifier) {
+    val colors = OllTheme.colors
+    Row(modifier = modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Resource.entries.forEach { resource ->
+            Row(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(colors.surfaceSunken)
+                    .padding(horizontal = 10.dp, vertical = 4.dp)
+                    .semantics(mergeDescendants = true) {},
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(resource.label, style = OllType.caption, color = colors.inkMuted)
+                Text("${storage[resource]}", style = OllType.stat, color = colors.ink)
+            }
+        }
+    }
+}
+
 @Composable
 private fun Notice(text: String, low: Boolean, modifier: Modifier = Modifier) {
     val colors = OllTheme.colors
@@ -206,16 +246,33 @@ private fun ObjectSheet(obj: PlotObject, viewModel: GameViewModel, minutesLeft: 
             modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 32.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text(obj.kind.label, style = OllType.title, color = colors.ink, modifier = Modifier.semantics { heading() })
+            val usesLeft = viewModel.camp.usesLeft(obj)
+            val perDay = Gathering.usesPerDay(obj.kind)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Bottom,
+            ) {
+                Text(obj.kind.label, style = OllType.title, color = colors.ink, modifier = Modifier.semantics { heading() })
+                if (perDay != Int.MAX_VALUE) {
+                    Text("$usesLeft of $perDay left today", style = OllType.caption, color = colors.inkMuted)
+                }
+            }
             when {
                 asleep -> Text("Everyone's asleep. Start the next day first.", style = OllType.body, color = colors.inkMuted)
+                obj.kind == ObjectKind.CHEST -> ChestContents(viewModel.camp.storage)
                 actions.isEmpty() -> Text(comingSoon(obj.kind), style = OllType.body, color = colors.inkMuted)
                 else -> actions.forEach { action ->
                     val fits = action.minutes <= minutesLeft
+                    val grown = usesLeft > 0
                     SecondaryButton(
                         text = action.name,
-                        detail = if (fits) describe(action) else "Not enough time today",
-                        enabled = fits,
+                        detail = when {
+                            !grown -> "Grows back tomorrow"
+                            !fits -> "Not enough time today"
+                            else -> describe(action)
+                        },
+                        enabled = fits && grown,
                         onClick = { viewModel.perform(obj, action) },
                         modifier = Modifier.fillMaxWidth(),
                     )
@@ -226,12 +283,28 @@ private fun ObjectSheet(obj: PlotObject, viewModel: GameViewModel, minutesLeft: 
 }
 
 private fun comingSoon(kind: ObjectKind): String = when (kind) {
-    ObjectKind.TREE -> "Chopping wood arrives in the next update."
-    ObjectKind.ROCK -> "Breaking rocks for stone arrives in the next update."
-    ObjectKind.BUSH -> "Picking fiber arrives in the next update."
-    ObjectKind.WORKBENCH -> "Making planks, bricks and cloth arrives soon."
-    ObjectKind.CHEST -> "The shared storage chest fills up once you start gathering."
+    ObjectKind.WORKBENCH -> "Making planks, bricks and cloth arrives in the next update."
     else -> "Nothing to do here yet."
+}
+
+@Composable
+private fun ChestContents(storage: Storage) {
+    val colors = OllTheme.colors
+    val empty = Resource.entries.all { storage[it] == 0 }
+    if (empty) {
+        Text(
+            "Empty for now. Chop trees, break rocks and pick bushes, and everything you gather lands here for both of you.",
+            style = OllType.body,
+            color = colors.inkMuted,
+        )
+        return
+    }
+    Resource.entries.forEach { resource ->
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text(resource.label, style = OllType.body, color = colors.ink)
+            Text("${storage[resource]}", style = OllType.stat, color = colors.ink)
+        }
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

@@ -74,8 +74,9 @@ class PlotTest {
     }
 
     @Test
-    fun `gathering spots offer nothing until gathering exists`() {
-        listOf(ObjectKind.TREE, ObjectKind.ROCK, ObjectKind.BUSH)
-            .forEach { assertTrue(ObjectActions.forKind(it).isEmpty()) }
+    fun `gathering spots offer their gathering action`() {
+        assertEquals(listOf(Gathering.chop), ObjectActions.forKind(ObjectKind.TREE))
+        assertEquals(listOf(Gathering.breakRock), ObjectActions.forKind(ObjectKind.ROCK))
+        assertEquals(listOf(Gathering.pickFiber), ObjectActions.forKind(ObjectKind.BUSH))
     }
 }

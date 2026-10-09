@@ -6,12 +6,14 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import com.ourlittlelife.rules.Action
 import com.ourlittlelife.rules.ActionResult
+import com.ourlittlelife.rules.Camp
 import com.ourlittlelife.rules.Character
 import com.ourlittlelife.rules.ObjectActions
 import com.ourlittlelife.rules.Plot
 import com.ourlittlelife.rules.PlotObject
 import com.ourlittlelife.rules.Rules
 import com.ourlittlelife.rules.StarterPlot
+import com.ourlittlelife.rules.UseResult
 
 /**
  * Phase 1 prototype: one playable character on the starter plot, one phone, no saving yet.
@@ -19,7 +21,10 @@ import com.ourlittlelife.rules.StarterPlot
  */
 class GameViewModel : ViewModel() {
 
-    val plot: Plot = StarterPlot.create()
+    var camp by mutableStateOf(Camp(StarterPlot.create()))
+        private set
+
+    val plot: Plot get() = camp.plot
 
     var character by mutableStateOf(Character("Jo"))
         private set
@@ -48,17 +53,22 @@ class GameViewModel : ViewModel() {
     }
 
     fun perform(obj: PlotObject, action: Action) {
-        when (val result = Rules.perform(character, action)) {
-            is ActionResult.Done -> {
+        when (val result = camp.use(character, obj, action)) {
+            is UseResult.Done -> {
                 character = result.character
+                camp = result.camp
                 characterTile = spotNextTo(obj) ?: characterTile
-                message = null
+                message = action.yields.entries.firstOrNull()?.let { (resource, amount) ->
+                    "+$amount ${resource.label.lowercase()} in the chest."
+                }
                 selected = null
             }
-            is ActionResult.NotEnoughTime ->
-                message = "Not enough time left today for that. Try something shorter, or go to bed."
-            ActionResult.Asleep ->
-                message = "${character.name} is asleep."
+            UseResult.UsedUp ->
+                message = "That ${obj.kind.label.lowercase()} needs to grow back. Try another, or come back tomorrow."
+            is UseResult.Refused -> message = when (result.reason) {
+                is ActionResult.NotEnoughTime -> "Not enough time left today for that. Try something shorter, or go to bed."
+                else -> "${character.name} is asleep."
+            }
         }
     }
 
@@ -74,7 +84,9 @@ class GameViewModel : ViewModel() {
 
     fun startNextDay() {
         character = Rules.advanceDay(listOf(character)).single()
+        camp = camp.nextDay()
         characterTile = 11 to 11
+        message = "Trees, rocks and bushes have grown back."
     }
 
     /** The free tile just below an object (where you'd stand to use it), if there is one. */

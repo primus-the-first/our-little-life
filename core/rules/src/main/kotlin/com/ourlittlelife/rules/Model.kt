@@ -45,13 +45,33 @@ data class Clock(val day: Int, val minute: Int) {
     }
 }
 
-/** Something a character can spend time on. Effects are added on top of the normal hourly drop. */
+/**
+ * Something a character can spend time on. Effects are added on top of the normal hourly drop;
+ * yields are resources that go into the shared chest.
+ */
 data class Action(
     val id: String,
     val name: String,
     val minutes: Int,
     val effects: Map<Need, Int> = emptyMap(),
+    val yields: Map<Resource, Int> = emptyMap(),
 )
+
+/** Raw materials gathered on the plot. */
+enum class Resource(val label: String) {
+    WOOD("Wood"),
+    STONE("Stone"),
+    FIBER("Fiber"),
+}
+
+/** The shared storage chest: how much of each resource the pair has. */
+data class Storage(private val amounts: Map<Resource, Int> = emptyMap()) {
+
+    operator fun get(resource: Resource): Int = amounts[resource] ?: 0
+
+    fun plus(added: Map<Resource, Int>): Storage =
+        Storage(Resource.entries.associateWith { this[it] + (added[it] ?: 0) })
+}
 
 data class Character(
     val name: String,

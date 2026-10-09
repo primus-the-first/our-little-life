@@ -22,12 +22,13 @@ fun formatDuration(minutes: Int): String {
     }
 }
 
-/** "1h · +45 Hunger, +5 Fun" */
+/** "1h · +45 Hunger, +5 Fun", or for gathering "1h · +6 Wood · -6 Energy" */
 fun describe(action: Action): String {
+    val yields = action.yields.entries.joinToString(", ") { (resource, amount) -> "+$amount ${resource.label}" }
     val effects = action.effects.entries.joinToString(", ") { (need, change) ->
         (if (change > 0) "+" else "") + "$change ${need.label}"
     }
-    return listOf(formatDuration(action.minutes), effects).filter { it.isNotEmpty() }.joinToString(" · ")
+    return listOf(formatDuration(action.minutes), yields, effects).filter { it.isNotEmpty() }.joinToString(" · ")
 }
 
 fun moodWord(mood: Int): String = when {
