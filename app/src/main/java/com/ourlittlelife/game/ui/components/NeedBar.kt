@@ -19,7 +19,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.ourlittlelife.game.ui.theme.OllTheme
 import com.ourlittlelife.game.ui.theme.OllType
@@ -48,7 +47,7 @@ fun NeedBar(label: String, value: Int, modifier: Modifier = Modifier) {
             Text(label, style = OllType.caption, color = colors.ink)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 if (value < LOW) {
-                    Text("LOW", style = OllType.caption.copy(fontWeight = FontWeight.Bold), color = colors.berry)
+                    Text("LOW", style = OllType.tag, color = colors.berry)
                 }
                 Text("$value", style = OllType.stat, color = colors.ink)
             }

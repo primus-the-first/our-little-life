@@ -4,7 +4,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import com.ourlittlelife.game.day.DayScreen
+import com.ourlittlelife.game.home.HomeScreen
 import com.ourlittlelife.game.ui.theme.OurLittleLifeTheme
 
 class MainActivity : ComponentActivity() {
@@ -13,7 +13,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             OurLittleLifeTheme {
-                DayScreen()
+                HomeScreen()
             }
         }
     }
