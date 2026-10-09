@@ -3,6 +3,7 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 // Pure Kotlin: the game rules know nothing about Android, so they can be tested without a phone.
 plugins {
     alias(libs.plugins.kotlin.jvm)
+    alias(libs.plugins.kotlin.serialization)
 }
 
 java {
@@ -17,6 +18,9 @@ kotlin {
 }
 
 dependencies {
+    // Saves are plain JSON, so the format is readable and testable here.
+    api(libs.kotlinx.serialization.json)
+
     testImplementation(libs.junit)
     testImplementation(libs.kotlin.test)
 }

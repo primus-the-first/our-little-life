@@ -1,5 +1,7 @@
 package com.ourlittlelife.rules
 
+import kotlinx.serialization.Serializable
+
 /** The five needs every character has. */
 enum class Need(val label: String) {
     ENERGY("Energy"),
@@ -10,6 +12,7 @@ enum class Need(val label: String) {
 }
 
 /** Need levels, each from 0 (empty) to 100 (full). Every change is clamped to that range. */
+@Serializable
 data class Needs(private val levels: Map<Need, Int>) {
 
     operator fun get(need: Need): Int = levels[need] ?: 0
@@ -29,6 +32,7 @@ data class Needs(private val levels: Map<Need, Int>) {
 }
 
 /** In-game time. Day 1 is a Monday; waking hours run from 7am to 11pm. */
+@Serializable
 data class Clock(val day: Int, val minute: Int) {
 
     val minutesLeft: Int get() = (Rules.DAY_END - minute).coerceAtLeast(0)
@@ -69,6 +73,7 @@ enum class Resource(val label: String, val refined: Boolean = false) {
 }
 
 /** The shared storage chest: how much of each resource the pair has. */
+@Serializable
 data class Storage(private val amounts: Map<Resource, Int> = emptyMap()) {
 
     operator fun get(resource: Resource): Int = amounts[resource] ?: 0
@@ -88,6 +93,7 @@ data class Storage(private val amounts: Map<Resource, Int> = emptyMap()) {
         needed.mapValues { (resource, amount) -> amount - this[resource] }.filterValues { it > 0 }
 }
 
+@Serializable
 data class Character(
     val name: String,
     val needs: Needs = Needs.full(),

@@ -4,6 +4,7 @@ import com.ourlittlelife.rules.Need.ENERGY
 import com.ourlittlelife.rules.Resource.BRICKS
 import com.ourlittlelife.rules.Resource.CLOTH
 import com.ourlittlelife.rules.Resource.PLANKS
+import kotlinx.serialization.Serializable
 
 /** The rooms a home can grow into. Sizes are in tiles; costs and times are starting values. */
 enum class RoomKind(val label: String, val width: Int, val height: Int, val costs: Map<Resource, Int>, val minutes: Int) {
@@ -15,6 +16,7 @@ enum class RoomKind(val label: String, val width: Int, val height: Int, val cost
     GARDEN("Garden", 5, 4, mapOf(PLANKS to 20, BRICKS to 10), 4 * 60),
 }
 
+@Serializable
 data class Room(val id: String, val kind: RoomKind, val x: Int, val y: Int) {
 
     fun covers(tileX: Int, tileY: Int): Boolean =

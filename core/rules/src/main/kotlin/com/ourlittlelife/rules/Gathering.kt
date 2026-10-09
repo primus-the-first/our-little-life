@@ -1,6 +1,7 @@
 package com.ourlittlelife.rules
 
 import com.ourlittlelife.rules.Need.ENERGY
+import kotlinx.serialization.Serializable
 
 /** Gathering wood, stone and fiber. Each spot gives a few times a day and grows back overnight. */
 object Gathering {
@@ -30,6 +31,7 @@ sealed interface UseResult {
 }
 
 /** The shared world on one plot: the land, the storage chest, and what has been gathered today. */
+@Serializable
 data class Camp(
     val plot: Plot,
     val storage: Storage = Storage(),

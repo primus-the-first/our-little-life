@@ -3,7 +3,12 @@ package com.ourlittlelife.game.home
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import androidx.lifecycle.ViewModel
+import android.app.Application
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
+import com.ourlittlelife.rules.SaveGame
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import com.ourlittlelife.game.day.describeShortfall
 import com.ourlittlelife.rules.Action
 import com.ourlittlelife.rules.ActionResult
@@ -31,22 +36,34 @@ sealed interface Selection {
 }
 
 /**
- * Phase 1 prototype: one playable character on the starter plot, one phone, no saving yet.
+ * Phase 1 prototype: one playable character on the starter plot, saved on this phone.
  * Maya stands by the fire as a stand-in until the shared world arrives in Phase 2.
  */
-class GameViewModel : ViewModel() {
+class GameViewModel(application: Application) : AndroidViewModel(application) {
 
-    var camp by mutableStateOf(Camp(StarterPlot.create()))
+    private val store = SaveStore(application.filesDir)
+    private val saved: SaveGame? = store.load()
+
+    // Saves are written one at a time, in order, off the main thread.
+    private val saveThread = Dispatchers.IO.limitedParallelism(1)
+
+    var camp by mutableStateOf(saved?.camp ?: Camp(StarterPlot.create()))
         private set
 
     val plot: Plot get() = camp.plot
 
-    var character by mutableStateOf(Character("Jo"))
+    var character by mutableStateOf(saved?.character ?: Character("Jo"))
         private set
 
     /** Where Jo stands, in tiles. Jo walks over to whatever was just used. */
-    var characterTile by mutableStateOf(11 to 11)
+    var characterTile by mutableStateOf(saved?.let { it.tileX to it.tileY } ?: (11 to 11))
         private set
+
+    /** Writes the current game to disk. Called after every change that matters. */
+    private fun persist() {
+        val game = SaveGame(character = character, camp = camp, tileX = characterTile.first, tileY = characterTile.second)
+        viewModelScope.launch(saveThread) { store.save(game) }
+    }
 
     val partnerName = "Maya"
     val partnerTile = 13 to 11
@@ -90,6 +107,7 @@ class GameViewModel : ViewModel() {
                     "+$amount ${resource.label.lowercase()} in the chest."
                 }
                 selection = null
+                persist()
             }
             UseResult.UsedUp ->
                 message = "That ${obj.kind.label.lowercase()} needs to grow back. Try another, or come back tomorrow."
@@ -107,6 +125,7 @@ class GameViewModel : ViewModel() {
                 characterTile = room.x + 1 to room.y + 1
                 message = null
                 selection = null
+                persist()
             }
             is UseResult.Refused -> message = refusal(result.reason)
             else -> Unit
@@ -125,6 +144,7 @@ class GameViewModel : ViewModel() {
                     "The ${kind.label.lowercase()} is finished."
                 }
                 selection = null
+                persist()
             }
             is BuildResult.Missing -> message = describeShortfall(result.shortfall) + " in the chest."
             is BuildResult.CantPlace -> message = "That spot doesn't work. Try somewhere else."
@@ -140,12 +160,14 @@ class GameViewModel : ViewModel() {
     fun debugFillChest() {
         camp = camp.copy(storage = camp.storage.plus(Resource.entries.associateWith { 100 }))
         message = "Debug: +100 of everything."
+        persist()
     }
 
     fun sleep() {
         character = Rules.sleep(character)
         selection = null
         message = null
+        persist()
     }
 
     fun startNextDay() {
@@ -153,6 +175,7 @@ class GameViewModel : ViewModel() {
         camp = camp.nextDay()
         characterTile = 11 to 11
         message = "Trees, rocks and bushes have grown back."
+        persist()
     }
 
     private fun refusal(reason: ActionResult): String = when (reason) {

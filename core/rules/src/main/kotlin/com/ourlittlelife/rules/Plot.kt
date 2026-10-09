@@ -1,5 +1,7 @@
 package com.ourlittlelife.rules
 
+import kotlinx.serialization.Serializable
+
 /** Everything that can stand on the plot. Sizes are in tiles. */
 enum class ObjectKind(val label: String, val width: Int = 1, val height: Int = 1) {
     TENT("Tent", width = 2, height = 2),
@@ -13,6 +15,7 @@ enum class ObjectKind(val label: String, val width: Int = 1, val height: Int = 1
     BUSH("Berry bush"),
 }
 
+@Serializable
 data class PlotObject(val id: String, val kind: ObjectKind, val x: Int, val y: Int) {
 
     fun covers(tileX: Int, tileY: Int): Boolean =
@@ -23,6 +26,7 @@ data class PlotObject(val id: String, val kind: ObjectKind, val x: Int, val y: I
 }
 
 /** The shared piece of land, [size] × [size] tiles, with x running right and y running down. */
+@Serializable
 data class Plot(val size: Int, val objects: List<PlotObject>, val rooms: List<Room> = emptyList()) {
 
     fun objectAt(tileX: Int, tileY: Int): PlotObject? = objects.firstOrNull { it.covers(tileX, tileY) }
