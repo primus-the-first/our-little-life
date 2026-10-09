@@ -1,5 +1,6 @@
 package com.ourlittlelife.game.home
 
+import androidx.compose.ui.graphics.Color
 import com.ourlittlelife.rules.ObjectKind
 
 /** The three Kenney sheets (CC0). Every tile is 16×16 px with a 1 px gap between tiles. */
@@ -16,6 +17,10 @@ object Sprites {
 
     val grass = Sprite(Sheet.OUTDOOR, 5, 0)
     val dirt = Sprite(Sheet.OUTDOOR, 6, 0)
+    val floor = Sprite(Sheet.OUTDOOR, 8, 3)
+
+    /** Wooden walls around rooms: part of the world art, matched to the Kenney planks, not a UI colour. */
+    val wallColor = Color(0xFF8A5A3C)
 
     fun forKind(kind: ObjectKind): List<SpritePart> = when (kind) {
         ObjectKind.TENT -> listOf(

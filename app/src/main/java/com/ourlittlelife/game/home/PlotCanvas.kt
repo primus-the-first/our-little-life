@@ -16,6 +16,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
@@ -40,6 +41,12 @@ import kotlin.math.roundToInt
 /** A character standing on a tile, with the colour of its name tag. */
 data class PlacedCharacter(val name: String, val layers: List<Sprite>, val x: Int, val y: Int, val tag: Color)
 
+/** A rectangle of tiles: what's selected, or where a room would go. */
+data class TileArea(val x: Int, val y: Int, val width: Int, val height: Int)
+
+/** A see-through room outline shown before building; [fits] says whether it can go there. */
+data class Ghost(val area: TileArea, val fits: Boolean)
+
 /** The tiles under the camp, drawn as bare dirt. */
 private val campArea = 8..15 to 8..13
 
@@ -51,7 +58,8 @@ private val campArea = 8..15 to 8..13
 fun PlotCanvas(
     plot: Plot,
     characters: List<PlacedCharacter>,
-    selected: PlotObject?,
+    selected: TileArea?,
+    ghost: Ghost?,
     focusTile: Pair<Int, Int>,
     onTapTile: (Int, Int) -> Unit,
     modifier: Modifier = Modifier,
@@ -130,6 +138,29 @@ fun PlotCanvas(
             sprite(if (bare) Sprites.dirt else Sprites.grass, tx, ty)
         }
 
+        // Rooms: a plank floor inside a wooden wall, with the room's name in the corner.
+        plot.rooms.forEach { room ->
+            room.tiles().forEach { (tx, ty) -> sprite(Sprites.floor, tx, ty) }
+            val wall = 4.dp.toPx()
+            drawRect(
+                color = Sprites.wallColor,
+                topLeft = Offset(origin.x + room.x * tile + wall / 2, origin.y + room.y * tile + wall / 2),
+                size = Size(room.kind.width * tile - wall, room.kind.height * tile - wall),
+                style = Stroke(width = wall),
+            )
+            // The name sits on a small tag so it reads clearly against the planks.
+            val name = textMeasurer.measure(room.kind.label, OllType.caption.copy(color = colors.ink))
+            val pad = 6.dp.toPx()
+            val tagTopLeft = Offset(origin.x + room.x * tile + wall * 2, origin.y + room.y * tile + wall * 2)
+            drawRoundRect(
+                color = colors.surfaceRaised,
+                topLeft = tagTopLeft,
+                size = Size(name.size.width + pad * 2, name.size.height + pad),
+                cornerRadius = CornerRadius(6.dp.toPx()),
+            )
+            drawText(name, topLeft = tagTopLeft + Offset(pad, pad / 2))
+        }
+
         // Objects back to front, so lower ones overlap higher ones.
         plot.objects.sortedBy { it.y + it.kind.height }.forEach { obj ->
             Sprites.forKind(obj.kind).forEach { part -> sprite(part.sprite, obj.x + part.dx, obj.y + part.dy) }
@@ -150,12 +181,26 @@ fun PlotCanvas(
             drawText(label, topLeft = Offset(tagLeft + pad, tagTop))
         }
 
-        selected?.let { obj ->
+        // Where a room would go: green-tinted if it fits, berry-tinted if not, always with a dashed edge.
+        ghost?.let { (area, fits) ->
+            val tint = if (fits) colors.leaf else colors.berry
+            val topLeft = Offset(origin.x + area.x * tile, origin.y + area.y * tile)
+            val areaSize = Size(area.width * tile, area.height * tile)
+            drawRect(color = tint.copy(alpha = 0.35f), topLeft = topLeft, size = areaSize)
+            drawRect(
+                color = tint,
+                topLeft = topLeft,
+                size = areaSize,
+                style = Stroke(width = 3.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(12.dp.toPx(), 8.dp.toPx()))),
+            )
+        }
+
+        selected?.let { area ->
             val inset = 2.dp.toPx()
             drawRoundRect(
                 color = colors.ink,
-                topLeft = Offset(origin.x + obj.x * tile - inset, origin.y + obj.y * tile - inset),
-                size = Size(obj.kind.width * tile + inset * 2, obj.kind.height * tile + inset * 2),
+                topLeft = Offset(origin.x + area.x * tile - inset, origin.y + area.y * tile - inset),
+                size = Size(area.width * tile + inset * 2, area.height * tile + inset * 2),
                 cornerRadius = CornerRadius(6.dp.toPx()),
                 style = Stroke(width = 2.dp.toPx()),
             )

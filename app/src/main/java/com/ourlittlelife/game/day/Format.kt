@@ -27,7 +27,8 @@ fun formatDuration(minutes: Int): String {
 fun describe(action: Action): String {
     val made = action.yields.entries.joinToString(", ") { (resource, amount) -> "$amount ${resource.label}" }
     val yields = when {
-        action.yields.isEmpty() -> ""
+        action.yields.isEmpty() && action.costs.isEmpty() -> ""
+        action.yields.isEmpty() -> action.costs.entries.joinToString(", ") { (resource, amount) -> "$amount ${resource.label}" }
         action.costs.isEmpty() -> action.yields.entries.joinToString(", ") { (resource, amount) -> "+$amount ${resource.label}" }
         else -> action.costs.entries.joinToString(", ") { (resource, amount) -> "$amount ${resource.label}" } + " → " + made
     }

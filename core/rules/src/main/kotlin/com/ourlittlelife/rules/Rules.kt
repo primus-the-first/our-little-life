@@ -56,13 +56,14 @@ object Rules {
     fun canAdvance(characters: List<Character>): Boolean =
         characters.isNotEmpty() && characters.all { it.asleep }
 
-    fun advanceDay(characters: List<Character>): List<Character> {
+    /** [restful] is true once there's a real roof: a night in a bed restores all energy. */
+    fun advanceDay(characters: List<Character>, restful: Boolean = false): List<Character> {
         require(canAdvance(characters)) { "Everyone must be asleep before the day advances" }
-        return characters.map(::wakeUp)
+        return characters.map { wakeUp(it, restful) }
     }
 
-    private fun wakeUp(character: Character): Character = character.copy(
-        needs = character.needs.plus(overnight),
+    private fun wakeUp(character: Character, restful: Boolean): Character = character.copy(
+        needs = character.needs.plus(if (restful) overnight + (ENERGY to 100) else overnight),
         clock = Clock.startOfDay(character.clock.day + 1),
         asleep = false,
     )

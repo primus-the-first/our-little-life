@@ -23,9 +23,11 @@ data class PlotObject(val id: String, val kind: ObjectKind, val x: Int, val y: I
 }
 
 /** The shared piece of land, [size] × [size] tiles, with x running right and y running down. */
-data class Plot(val size: Int, val objects: List<PlotObject>) {
+data class Plot(val size: Int, val objects: List<PlotObject>, val rooms: List<Room> = emptyList()) {
 
     fun objectAt(tileX: Int, tileY: Int): PlotObject? = objects.firstOrNull { it.covers(tileX, tileY) }
+
+    fun roomAt(tileX: Int, tileY: Int): Room? = rooms.firstOrNull { it.covers(tileX, tileY) }
 }
 
 /** Day 1: a small camp in the middle of bare land, with trees, rocks and bushes to gather from. */

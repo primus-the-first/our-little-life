@@ -41,8 +41,14 @@ import com.ourlittlelife.game.ui.components.PrimaryButton
 import com.ourlittlelife.game.ui.components.SecondaryButton
 import com.ourlittlelife.game.ui.theme.OllTheme
 import com.ourlittlelife.game.ui.theme.OllType
+import androidx.compose.ui.graphics.Color
+import com.ourlittlelife.game.BuildConfig
+import com.ourlittlelife.rules.Building
 import com.ourlittlelife.rules.Clock
 import com.ourlittlelife.rules.Gathering
+import com.ourlittlelife.rules.Placement
+import com.ourlittlelife.rules.Room
+import com.ourlittlelife.rules.RoomKind
 import com.ourlittlelife.rules.Need
 import com.ourlittlelife.rules.ObjectKind
 import com.ourlittlelife.rules.PlotObject
@@ -90,13 +96,29 @@ fun HomeScreen(viewModel: GameViewModel = viewModel()) {
                 .padding(horizontal = 16.dp)
                 .clip(RoundedCornerShape(20.dp)),
         ) {
+            val selection = viewModel.selection
+            val selectedArea = when (selection) {
+                is Selection.Thing -> selection.obj.let { TileArea(it.x, it.y, it.kind.width, it.kind.height) }
+                is Selection.InRoom -> selection.room.let { TileArea(it.x, it.y, it.kind.width, it.kind.height) }
+                is Selection.Ground, null -> null
+            }
+            // On empty ground, preview the first room on offer right where you tapped.
+            val ghost = (selection as? Selection.Ground)?.let { ground ->
+                viewModel.buildOptions().firstOrNull()?.let { kind ->
+                    Ghost(
+                        area = TileArea(ground.x, ground.y, kind.width, kind.height),
+                        fits = viewModel.placement(kind, ground.x, ground.y) == Placement.Ok,
+                    )
+                }
+            }
             PlotCanvas(
                 plot = viewModel.plot,
                 characters = listOf(
                     PlacedCharacter(character.name, Sprites.jo, viewModel.characterTile.first, viewModel.characterTile.second, colors.peach),
                     PlacedCharacter(viewModel.partnerName, Sprites.maya, viewModel.partnerTile.first, viewModel.partnerTile.second, colors.sky),
                 ),
-                selected = viewModel.selected,
+                selected = selectedArea,
+                ghost = ghost,
                 focusTile = 11 to 11,
                 onTapTile = viewModel::tapTile,
                 modifier = Modifier.fillMaxSize(),
@@ -139,13 +161,11 @@ fun HomeScreen(viewModel: GameViewModel = viewModel()) {
         }
     }
 
-    viewModel.selected?.let { obj ->
-        ObjectSheet(
-            obj = obj,
-            viewModel = viewModel,
-            minutesLeft = clock.minutesLeft,
-            asleep = character.asleep,
-        )
+    when (val selection = viewModel.selection) {
+        is Selection.Thing -> ObjectSheet(selection.obj, viewModel, clock.minutesLeft, character.asleep)
+        is Selection.InRoom -> RoomSheet(selection.room, viewModel, clock.minutesLeft, character.asleep)
+        is Selection.Ground -> GroundSheet(selection, viewModel, clock.minutesLeft, character.asleep)
+        null -> Unit
     }
 
     if (needsOpen) {
@@ -295,6 +315,101 @@ private fun ObjectSheet(obj: PlotObject, viewModel: GameViewModel, minutesLeft: 
 
 private fun comingSoon(kind: ObjectKind): String = "Nothing to do here yet."
 
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun RoomSheet(room: Room, viewModel: GameViewModel, minutesLeft: Int, asleep: Boolean) {
+    val colors = OllTheme.colors
+    ModalBottomSheet(
+        onDismissRequest = viewModel::dismissSelection,
+        containerColor = colors.surfaceRaised,
+        contentColor = colors.ink,
+    ) {
+        Column(
+            modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 32.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(room.kind.label, style = OllType.title, color = colors.ink, modifier = Modifier.semantics { heading() })
+            if (room.kind == RoomKind.CABIN) {
+                Text("A real roof. Nights in here restore all your energy.", style = OllType.body, color = colors.inkMuted)
+            }
+            if (asleep) {
+                Text("Everyone's asleep. Start the next day first.", style = OllType.body, color = colors.inkMuted)
+            } else {
+                viewModel.actionsFor(room).forEach { action ->
+                    val fits = action.minutes <= minutesLeft
+                    SecondaryButton(
+                        text = action.name,
+                        detail = if (fits) describe(action) else "Not enough time today",
+                        enabled = fits,
+                        onClick = { viewModel.perform(room, action) },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** Tapping empty grass: offer to build a room there, with the outline already shown on the map. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun GroundSheet(ground: Selection.Ground, viewModel: GameViewModel, minutesLeft: Int, asleep: Boolean) {
+    val colors = OllTheme.colors
+    val options = viewModel.buildOptions()
+    ModalBottomSheet(
+        onDismissRequest = viewModel::dismissSelection,
+        containerColor = colors.surfaceRaised,
+        contentColor = colors.ink,
+        scrimColor = Color.Transparent,
+    ) {
+        Column(
+            modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 32.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text("Empty ground", style = OllType.title, color = colors.ink, modifier = Modifier.semantics { heading() })
+            when {
+                asleep -> Text("Everyone's asleep. Start the next day first.", style = OllType.body, color = colors.inkMuted)
+                options.isEmpty() -> Text("Every room is built. Time to decorate.", style = OllType.body, color = colors.inkMuted)
+                else -> {
+                    val first = options.first()
+                    Text(
+                        "The outline shows where the ${first.label.lowercase()} would go (${first.width} × ${first.height} tiles). Its top-left corner sits where you tapped.",
+                        style = OllType.body,
+                        color = colors.inkMuted,
+                    )
+                    options.forEach { kind ->
+                        val placement = viewModel.placement(kind, ground.x, ground.y)
+                        val short = viewModel.camp.storage.shortfall(kind.costs)
+                        val time = Building.actionFor(kind).minutes
+                        val ready = placement == Placement.Ok && short.isEmpty() && time <= minutesLeft
+                        SecondaryButton(
+                            text = "Build the ${kind.label.lowercase()} here",
+                            detail = when {
+                                placement != Placement.Ok -> placementProblem(placement)
+                                short.isNotEmpty() -> describeShortfall(short)
+                                time > minutesLeft -> "Not enough time today"
+                                else -> describe(Building.actionFor(kind))
+                            },
+                            enabled = ready,
+                            onClick = { viewModel.build(kind, ground.x, ground.y) },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun placementProblem(placement: Placement): String = when (placement) {
+    Placement.OffPlot -> "Too close to the edge"
+    Placement.Blocked -> "Something's in the way"
+    Placement.CabinFirst -> "Build the cabin first"
+    Placement.NotConnected -> "Has to join an existing room"
+    Placement.AlreadyBuilt -> "Already built"
+    Placement.Ok -> ""
+}
+
 @Composable
 private fun ChestContents(storage: Storage) {
     val colors = OllTheme.colors
@@ -331,6 +446,14 @@ private fun NeedsSheet(viewModel: GameViewModel, onDismiss: () -> Unit) {
         ) {
             Text("${character.name}'s needs", style = OllType.title, color = colors.ink, modifier = Modifier.semantics { heading() })
             Need.entries.forEach { need -> NeedBar(label = need.label, value = character.needs[need]) }
+            if (BuildConfig.DEBUG) {
+                SecondaryButton(
+                    text = "Debug: fill the chest",
+                    detail = "Test builds only",
+                    onClick = { viewModel.debugFillChest(); onDismiss() },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
         }
     }
 }

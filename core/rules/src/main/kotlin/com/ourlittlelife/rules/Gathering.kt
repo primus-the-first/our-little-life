@@ -63,4 +63,35 @@ data class Camp(
 
     /** Overnight, every tree, rock and bush grows back. The chest keeps what's in it. */
     fun nextDay(): Camp = copy(usesToday = emptyMap())
+
+    /** True once the cabin stands: nights are spent in a real bed. */
+    val hasRoof: Boolean get() = plot.rooms.any { it.kind == RoomKind.CABIN }
+
+    /** Builds a room with materials from the chest. Nothing is spent if it can't go there. */
+    fun build(character: Character, kind: RoomKind, x: Int, y: Int): BuildResult {
+        val placement = Building.check(plot, kind, x, y)
+        if (placement != Placement.Ok) return BuildResult.CantPlace(placement)
+        val short = storage.shortfall(kind.costs)
+        if (short.isNotEmpty()) return BuildResult.Missing(short)
+
+        return when (val result = Rules.perform(character, Building.actionFor(kind))) {
+            is ActionResult.Done -> BuildResult.Done(
+                character = result.character,
+                camp = copy(
+                    storage = storage.minus(kind.costs),
+                    plot = plot.copy(rooms = plot.rooms + Room(kind.name.lowercase(), kind, x, y)),
+                ),
+            )
+            else -> BuildResult.Refused(result)
+        }
+    }
+
+    /** Uses something a room offers, such as the cabin's bed. */
+    fun useRoom(character: Character, room: Room, action: Action): UseResult {
+        require(action in RoomActions.forKind(room.kind)) { "${room.kind.label} doesn't offer ${action.name}" }
+        return when (val result = Rules.perform(character, action)) {
+            is ActionResult.Done -> UseResult.Done(result.character, this)
+            else -> UseResult.Refused(result)
+        }
+    }
 }
