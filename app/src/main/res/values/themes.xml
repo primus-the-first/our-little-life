@@ -1,0 +1,8 @@
+<resources>
+    <!-- Only the window background before Compose draws; all real styling lives in ui/theme. -->
+    <style name="Theme.OurLittleLife" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/surface</item>
+    </style>
+
+    <color name="surface">#F3F7F4</color>
+</resources>

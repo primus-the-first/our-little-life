@@ -1,0 +1,24 @@
+# Gradle and build output
+.gradle/
+build/
+**/build/
+local.properties
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Android Studio
+.idea/
+*.iml
+.DS_Store
+
+# Signing keys: never commit these. Back them up somewhere safe instead.
+*.jks
+*.keystore
+keystore.properties
+
+# Firebase config (added in Phase 2)
+google-services.json
+
+# Adult mode art never goes in the repo
+art/adult/

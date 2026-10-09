@@ -1,0 +1,7 @@
+<resources>
+    <style name="Theme.OurLittleLife" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/surface</item>
+    </style>
+
+    <color name="surface">#1A2130</color>
+</resources>
