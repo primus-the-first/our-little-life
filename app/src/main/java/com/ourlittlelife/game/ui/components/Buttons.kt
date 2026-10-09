@@ -74,7 +74,7 @@ fun PrimaryButton(
     }
 }
 
-/** Other actions beside a primary: raised surface with a 1.5dp outline. */
+/** Other actions beside a primary: raised surface with a 1.5dp outline. Also used for small floating toggles. */
 @Composable
 fun SecondaryButton(
     text: String,

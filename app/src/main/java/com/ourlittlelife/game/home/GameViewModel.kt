@@ -7,7 +7,10 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.ourlittlelife.rules.SaveGame
+import com.ourlittlelife.rules.Walking
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import com.ourlittlelife.game.day.describeShortfall
 import com.ourlittlelife.rules.Action
@@ -84,12 +87,30 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
 
     fun placement(kind: RoomKind, x: Int, y: Int): Placement = Building.check(plot, kind, x, y)
 
+    /** In build mode a tap on open ground previews a room there instead of walking. */
+    var buildMode by mutableStateOf(false)
+        private set
+
+    fun toggleBuildMode() {
+        buildMode = !buildMode
+        selection = null
+    }
+
+    private var walkJob: Job? = null
+
+    /** Taps: things open their actions; open ground and room floors are walked to (or built on, in build mode). */
     fun tapTile(x: Int, y: Int) {
-        selection = when {
-            x !in 0 until plot.size || y !in 0 until plot.size -> null
-            plot.objectAt(x, y) != null -> Selection.Thing(plot.objectAt(x, y)!!)
-            plot.roomAt(x, y) != null -> Selection.InRoom(plot.roomAt(x, y)!!)
-            else -> Selection.Ground(x, y)
+        if (x !in 0 until plot.size || y !in 0 until plot.size) return
+        val thing = plot.objectAt(x, y)
+        val room = plot.roomAt(x, y)
+        when {
+            thing != null -> selection = Selection.Thing(thing)
+            buildMode && room == null -> selection = Selection.Ground(x, y)
+            character.asleep -> message = "${character.name} is asleep. Start the next day first."
+            else -> walkTo(x to y) {
+                // Arriving in a room with something to do there opens it.
+                if (room != null && actionsFor(room).isNotEmpty()) selection = Selection.InRoom(room)
+            }
         }
     }
 
@@ -97,17 +118,45 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         selection = null
     }
 
+    /**
+     * Walks Jo tile by tile along the shortest route, then runs [onArrival].
+     * A new tap cancels a walk in progress. Walking is free: it uses no game time.
+     */
+    private fun walkTo(target: Pair<Int, Int>, onArrival: () -> Unit = {}) {
+        val route = Walking.path(plot, characterTile, target, occupied = setOf(partnerTile))
+        if (route == null) {
+            message = "${character.name} can't get there."
+            return
+        }
+        walkJob?.cancel()
+        walkJob = viewModelScope.launch {
+            for (step in route) {
+                characterTile = step
+                delay(STEP_MILLIS)
+            }
+            persist()
+            onArrival()
+        }
+    }
+
+    /** Checks the action first, so Jo never walks over for something that can't happen, then walks and does it. */
     fun perform(obj: PlotObject, action: Action) {
+        selection = null
         when (val result = camp.use(character, obj, action)) {
             is UseResult.Done -> {
-                character = result.character
-                camp = result.camp
-                characterTile = freeSpotBelow(obj.x, obj.y + obj.kind.height) ?: characterTile
-                message = action.yields.entries.firstOrNull()?.let { (resource, amount) ->
-                    "+$amount ${resource.label.lowercase()} in the chest."
+                val spot = Walking.spotBeside(plot, obj, characterTile, occupied = setOf(partnerTile))
+                if (spot == null) {
+                    message = "${character.name} can't reach the ${obj.kind.label.lowercase()}."
+                    return
                 }
-                selection = null
-                persist()
+                walkTo(spot) {
+                    character = result.character
+                    camp = result.camp
+                    message = action.yields.entries.firstOrNull()?.let { (resource, amount) ->
+                        "+$amount ${resource.label.lowercase()} in the chest."
+                    }
+                    persist()
+                }
             }
             UseResult.UsedUp ->
                 message = "That ${obj.kind.label.lowercase()} needs to grow back. Try another, or come back tomorrow."
@@ -122,7 +171,6 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             is UseResult.Done -> {
                 character = result.character
                 camp = result.camp
-                characterTile = room.x + 1 to room.y + 1
                 message = null
                 selection = null
                 persist()
@@ -137,7 +185,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             is BuildResult.Done -> {
                 character = result.character
                 camp = result.camp
-                characterTile = freeSpotBelow(x, y + kind.height) ?: characterTile
+                buildMode = false
                 message = if (kind == RoomKind.CABIN) {
                     "The cabin is finished. Tonight you sleep in a real bed."
                 } else {
@@ -173,7 +221,8 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     fun startNextDay() {
         character = Rules.advanceDay(listOf(character), restful = camp.hasRoof).single()
         camp = camp.nextDay()
-        characterTile = 11 to 11
+        // Wake up in the cabin once there is one, otherwise outside the tent.
+        characterTile = plot.rooms.firstOrNull { it.kind == RoomKind.CABIN }?.let { it.x + 1 to it.y + 1 } ?: (11 to 11)
         message = "Trees, rocks and bushes have grown back."
         persist()
     }
@@ -183,9 +232,8 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         else -> "${character.name} is asleep."
     }
 
-    /** A free tile where Jo can stand, if there is one. */
-    private fun freeSpotBelow(x: Int, y: Int): Pair<Int, Int>? {
-        val free = y < plot.size && plot.objectAt(x, y) == null && plot.roomAt(x, y) == null && (x to y) != partnerTile
-        return if (free) x to y else null
+    private companion object {
+        /** How long each step takes on screen. */
+        const val STEP_MILLIS = 140L
     }
 }

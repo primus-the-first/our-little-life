@@ -125,21 +125,32 @@ fun HomeScreen(viewModel: GameViewModel = viewModel()) {
             )
 
             val lowest = Need.entries.minBy { character.needs[it] }
-            val note = viewModel.message ?: if (character.needs[lowest] < 30) {
-                "${lowest.label} is low. Tap something nearby that helps."
-            } else {
-                null
+            val lowNeed = character.needs[lowest] < 30
+            val note = when {
+                viewModel.message != null -> viewModel.message
+                viewModel.buildMode -> "Build mode: tap open ground to place a room."
+                lowNeed -> "${lowest.label} is low. Tap something nearby that helps."
+                else -> null
             }
             if (note != null) {
                 Notice(
                     text = note,
-                    low = viewModel.message == null,
+                    low = viewModel.message == null && !viewModel.buildMode && lowNeed,
                     modifier = Modifier
                         .align(Alignment.TopCenter)
                         .padding(12.dp)
                         .clickable(onClick = viewModel::clearMessage),
                 )
             }
+
+            // A tap on grass normally walks there; build mode turns it into "place a room here".
+            SecondaryButton(
+                text = if (viewModel.buildMode) "Done building" else "Build",
+                onClick = viewModel::toggleBuildMode,
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(12.dp),
+            )
         }
 
         Box(Modifier.padding(16.dp)) {
@@ -366,7 +377,7 @@ private fun GroundSheet(ground: Selection.Ground, viewModel: GameViewModel, minu
             modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 32.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text("Empty ground", style = OllType.title, color = colors.ink, modifier = Modifier.semantics { heading() })
+            Text("Build here?", style = OllType.title, color = colors.ink, modifier = Modifier.semantics { heading() })
             when {
                 asleep -> Text("Everyone's asleep. Start the next day first.", style = OllType.body, color = colors.inkMuted)
                 options.isEmpty() -> Text("Every room is built. Time to decorate.", style = OllType.body, color = colors.inkMuted)
