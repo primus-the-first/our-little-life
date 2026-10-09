@@ -1,15 +1,37 @@
 package com.ourlittlelife.game.ui.theme
 
 import androidx.compose.runtime.Immutable
+import androidx.compose.ui.text.ExperimentalTextApi
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontVariation
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
+import com.ourlittlelife.game.R
 
-// TODO: swap to Pixelify Sans and Figtree once their font files are in res/font.
-private val DisplayFont = FontFamily.Default
-private val BodyFont = FontFamily.Default
+// Both fonts are variable (one file, every weight), so each weight sets its own variation.
+@OptIn(ExperimentalTextApi::class)
+private fun variableFont(resId: Int, weight: FontWeight) = Font(
+    resId = resId,
+    weight = weight,
+    variationSettings = FontVariation.Settings(FontVariation.weight(weight.weight)),
+)
+
+/** Pixelify Sans: the game's voice, for titles and numbers only. */
+private val DisplayFont = FontFamily(
+    variableFont(R.font.pixelify_sans, FontWeight.Medium),
+    variableFont(R.font.pixelify_sans, FontWeight.SemiBold),
+)
+
+/** Figtree: everything people read. */
+private val BodyFont = FontFamily(
+    variableFont(R.font.figtree, FontWeight.Normal),
+    variableFont(R.font.figtree, FontWeight.Medium),
+    variableFont(R.font.figtree, FontWeight.SemiBold),
+    variableFont(R.font.figtree, FontWeight.Bold),
+)
 
 /** Text styles from the design system: the game voice (display, title, stat) and reading styles. */
 @Immutable

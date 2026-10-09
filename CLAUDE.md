@@ -35,4 +35,14 @@ Kotlin, Jetpack Compose, Material 3. Firebase (Auth, Firestore, Storage, Cloud F
 
 - Run rules tests: `./gradlew :core:rules:test`
 - Build debug APK: `./gradlew :app:assembleDebug`
-- Install on a connected phone: `./gradlew :app:installDebug`
+- Install on a connected phone: `adb install -r -t app/build/outputs/apk/debug/app-debug.apk`
+
+Running Gradle from Claude Code's shell on this machine fails with "Unable to establish loopback connection" unless Java gets a short temp folder. Use:
+
+```bash
+export TMP='C:\Users\Public\olbuild-tmp' TEMP='C:\Users\Public\olbuild-tmp' JAVA_HOME=~/.jdks/jbr-21.0.11
+export GRADLE_OPTS='-Djava.io.tmpdir=C:\Users\Public\olbuild-tmp -Djdk.net.unixdomain.tmpdir=C:\Users\Public\olbuild-tmp'
+./gradlew <tasks> -Dorg.gradle.jvmargs="-Xmx2048m -Djava.io.tmpdir=C:\\Users\\Public\\olbuild-tmp -Djdk.net.unixdomain.tmpdir=C:\\Users\\Public\\olbuild-tmp"
+```
+
+adb lives at `$LOCALAPPDATA/Android/Sdk/platform-tools/adb.exe`.
