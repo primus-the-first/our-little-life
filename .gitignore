@@ -22,3 +22,6 @@ google-services.json
 
 # Adult mode art never goes in the repo
 art/adult/
+
+# Shareable APKs
+dist/
