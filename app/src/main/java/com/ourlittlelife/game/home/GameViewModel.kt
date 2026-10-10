@@ -21,6 +21,8 @@ import com.ourlittlelife.rules.Plot
 import com.ourlittlelife.rules.PlotObject
 import com.ourlittlelife.rules.Resource
 import com.ourlittlelife.rules.Room
+import com.ourlittlelife.rules.StarterActions
+import com.ourlittlelife.rules.Together
 import com.ourlittlelife.rules.RoomActions
 import com.ourlittlelife.rules.RoomKind
 import com.ourlittlelife.rules.UseResult
@@ -38,6 +40,7 @@ sealed interface Selection {
     data class Thing(val obj: PlotObject) : Selection
     data class InRoom(val room: Room) : Selection
     data class Ground(val x: Int, val y: Int) : Selection
+    data class Person(val playerId: String) : Selection
 }
 
 /**
@@ -91,6 +94,20 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     var buildMode by mutableStateOf(false)
         private set
 
+    /** True while the night sky is open after choosing "Look at the stars". */
+    var stargazing by mutableStateOf(false)
+        private set
+
+    /** Anyone in this world, for the person card. */
+    fun playerFor(id: String): Player? = world?.players?.get(id)
+
+    val myPlayerId: String get() = myId
+
+    /** Social that closing the sky would add right now: more with company, most if they're stargazing too. */
+    fun stargazeSocialPreview(): Int = world?.let { Together.socialBonus(it, it.player(myId).copy(tileX = characterTile.first, tileY = characterTile.second)) } ?: 0
+
+    private var clearedStaleActivity = false
+
     private var walkJob: Job? = null
     private var partnerJob: Job? = null
     private var attached = false
@@ -113,6 +130,12 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         if (!ready) return
 
         if (walkJob?.isActive != true) characterTile = me.tile
+
+        // An activity left over from closing the app mid-moment is cleared once, so the partner isn't misled.
+        if (!clearedStaleActivity) {
+            clearedStaleActivity = true
+            if (me.activity != null && !stargazing) commit { w -> w.withPlayer(w.player(myId).copy(activity = null)) }
+        }
         val other = partner
         if (other == null) partnerTile = null else showPartnerAt(other.tile)
 
@@ -185,7 +208,10 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         if (!ready || x !in 0 until plot.size || y !in 0 until plot.size) return
         val thing = plot.objectAt(x, y)
         val room = plot.roomAt(x, y)
+        val tapped = x to y
         when {
+            tapped == characterTile -> selection = Selection.Person(myId)
+            partner != null && tapped == partnerTile -> selection = Selection.Person(partner!!.id)
             thing != null -> selection = Selection.Thing(thing)
             buildMode && room == null -> selection = Selection.Ground(x, y)
             character.asleep -> message = "You're asleep. The day starts when everyone has gone to bed."
@@ -228,6 +254,10 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                 val spot = Walking.spotBeside(plot, obj, characterTile, occupied = occupied())
                 if (spot == null) {
                     message = "You can't reach the ${obj.kind.label.lowercase()}."
+                    return
+                }
+                if (action == StarterActions.stargaze) {
+                    walkTo(spot, saveOnArrival = false) { startStargazing(spot) }
                     return
                 }
                 walkTo(spot, saveOnArrival = false) {
@@ -302,6 +332,26 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         val name = partnerName
         message = if (name != null) "Sleep well. The day starts when $name goes to bed too." else null
         commit { w -> Worlds.advanceIfReady(Worlds.sleep(w, myId, now)) }
+    }
+
+    /** Opens the sky and shows the partner you're stargazing, so they can come and join. */
+    private fun startStargazing(spot: Pair<Int, Int>) {
+        stargazing = true
+        commit { w -> Together.startStargazing(w.withPlayer(w.player(myId).copy(tileX = spot.first, tileY = spot.second)), myId) }
+    }
+
+    /** Closing the sky: the hour passes, fun goes up, and social too if someone was with you. */
+    fun finishStargazing() {
+        stargazing = false
+        val social = stargazeSocialPreview()
+        val company = partnerName
+        commit(onSaved = { applied ->
+            message = when {
+                !applied -> "Not enough time left today to stay out. Maybe tomorrow night."
+                social > 0 && company != null -> "A lovely night with $company. +20 fun, +$social social."
+                else -> "What a sky. +20 fun."
+            }
+        }) { w -> Together.stargaze(w, myId) }
     }
 
     fun clearMessage() {

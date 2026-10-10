@@ -49,6 +49,8 @@ import com.ourlittlelife.game.ui.components.SecondaryButton
 import com.ourlittlelife.game.ui.theme.OllTheme
 import com.ourlittlelife.game.ui.theme.OllType
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.ourlittlelife.game.BuildConfig
 import com.ourlittlelife.rules.Building
 import com.ourlittlelife.rules.Clock
@@ -146,7 +148,23 @@ fun HomeScreen(viewModel: GameViewModel = viewModel(), onBackToLobby: () -> Unit
         is Selection.Thing -> ObjectSheet(selection.obj, viewModel, clock.minutesLeft, character.asleep)
         is Selection.InRoom -> RoomSheet(selection.room, viewModel, clock.minutesLeft, character.asleep)
         is Selection.Ground -> GroundSheet(selection, viewModel, clock.minutesLeft, character.asleep)
+        is Selection.Person -> PersonSheet(selection.playerId, viewModel)
         null -> Unit
+    }
+
+    if (viewModel.stargazing) {
+        val bonus = viewModel.stargazeSocialPreview()
+        Dialog(
+            onDismissRequest = viewModel::finishStargazing,
+            properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
+        ) {
+            StarSky(
+                people = listOfNotNull(viewModel.myOutfit, viewModel.partner?.takeIf { bonus > 0 }?.let { viewModel.outfitFor(it.id) }),
+                companionName = viewModel.partnerName,
+                socialBonus = bonus,
+                onClose = viewModel::finishStargazing,
+            )
+        }
     }
 
     if (needsOpen) {
@@ -164,7 +182,7 @@ private fun MapArea(viewModel: GameViewModel, focus: Pair<Int, Int>, modifier: M
         val selectedArea = when (selection) {
             is Selection.Thing -> selection.obj.let { TileArea(it.x, it.y, it.kind.width, it.kind.height) }
             is Selection.InRoom -> selection.room.let { TileArea(it.x, it.y, it.kind.width, it.kind.height) }
-            is Selection.Ground, null -> null
+            is Selection.Person, is Selection.Ground, null -> null
         }
         // On empty ground, preview the first room on offer right where you tapped.
         val ghost = (selection as? Selection.Ground)?.let { ground ->
@@ -540,6 +558,83 @@ private fun ChestContents(storage: Storage) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text(resource.label, style = OllType.body, color = colors.ink)
             Text("${storage[resource]}", style = OllType.stat, color = colors.ink)
+        }
+    }
+}
+
+/** Tapping a person: who they are, what they're up to, and what they need. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun PersonSheet(playerId: String, viewModel: GameViewModel) {
+    val colors = OllTheme.colors
+    val player = viewModel.playerFor(playerId) ?: return
+    val person = player.character
+    val isMe = playerId == viewModel.myPlayerId
+    val word = moodWord(person.needs.mood)
+    val low = Need.entries.filter { person.needs[it] < 30 }
+
+    ModalBottomSheet(
+        onDismissRequest = viewModel::dismissSelection,
+        containerColor = colors.surfaceRaised,
+        contentColor = colors.ink,
+    ) {
+        Column(
+            modifier = Modifier
+                .verticalScroll(rememberScrollState())
+                .padding(start = 16.dp, end = 16.dp, bottom = 32.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    if (isMe) "${person.name} (you)" else person.name,
+                    style = OllType.title,
+                    color = colors.ink,
+                    modifier = Modifier.semantics { heading() },
+                )
+                Text(
+                    word,
+                    style = OllType.caption,
+                    color = if (word == "Grumpy") colors.berry else colors.onFill,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(
+                            when (word) {
+                                "Cheerful" -> colors.leaf
+                                "Fine" -> colors.honey
+                                else -> colors.surfaceSunken
+                            },
+                        )
+                        .padding(horizontal = 8.dp, vertical = 2.dp),
+                )
+            }
+
+            val activity = player.activity
+            val status = when {
+                person.asleep -> "Asleep"
+                activity != null -> activity.label
+                else -> "Up · ${formatTime(person.clock.minute)} · ${formatDuration(person.clock.minutesLeft)} left today"
+            }
+            Text("Day ${person.clock.day} · $status", style = OllType.body, color = colors.inkMuted)
+
+            if (low.isNotEmpty()) {
+                val who = if (isMe) "You need" else "${person.name} needs"
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("LOW", style = OllType.tag, color = colors.berry)
+                    Text(
+                        "$who ${low.joinToString(" and ") { it.label.lowercase() }}." + if (!isMe) " A hand would help." else "",
+                        style = OllType.body,
+                        color = colors.ink,
+                    )
+                }
+            }
+
+            Text("Needs", style = OllType.heading, color = colors.ink, modifier = Modifier.semantics { heading() })
+            Need.entries.forEach { need -> NeedBar(label = need.label, value = person.needs[need]) }
+            Text("Skills arrive with careers.", style = OllType.caption, color = colors.inkMuted)
         }
     }
 }

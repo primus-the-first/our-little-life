@@ -12,7 +12,13 @@ enum class Mode(val label: String) {
     PARTNERS("Partners"),
 }
 
-/** One person in a world: their character, where they stand, and when they went to bed (epoch millis). */
+/** Something a player is in the middle of, shown to their partner. */
+@Serializable
+enum class Activity(val label: String) {
+    STARGAZING("Stargazing"),
+}
+
+/** One person in a world: their character, where they stand, what they're doing, and when they went to bed (epoch millis). */
 @Serializable
 data class Player(
     val id: String,
@@ -20,6 +26,7 @@ data class Player(
     val tileX: Int,
     val tileY: Int,
     val sleptAt: Long? = null,
+    val activity: Activity? = null,
 ) {
     val tile: Pair<Int, Int> get() = tileX to tileY
 }
