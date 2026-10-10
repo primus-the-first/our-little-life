@@ -96,6 +96,7 @@ fun HomeScreen(viewModel: GameViewModel = viewModel()) {
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 Hud(clock, character.name, character.needs.mood, onOpenNeeds = { needsOpen = true }, stacked = true)
+                PartnerLine(viewModel)
                 ResourceStrip(storage = viewModel.camp.storage)
                 Spacer(Modifier.weight(1f))
                 DayButton(viewModel)
@@ -123,6 +124,7 @@ fun HomeScreen(viewModel: GameViewModel = viewModel()) {
                 onOpenNeeds = { needsOpen = true },
                 modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 8.dp),
             )
+            PartnerLine(viewModel, modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp))
             ResourceStrip(
                 storage = viewModel.camp.storage,
                 modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
@@ -173,9 +175,13 @@ private fun MapArea(viewModel: GameViewModel, focus: Pair<Int, Int>, modifier: M
         }
         PlotCanvas(
             plot = viewModel.plot,
-            characters = listOf(
-                PlacedCharacter(character.name, Sprites.jo, viewModel.characterTile.first, viewModel.characterTile.second, colors.peach),
-                PlacedCharacter(viewModel.partnerName, Sprites.maya, viewModel.partnerTile.first, viewModel.partnerTile.second, colors.sky),
+            characters = listOfNotNull(
+                PlacedCharacter(character.name, viewModel.myOutfit, viewModel.characterTile.first, viewModel.characterTile.second, colors.peach),
+                viewModel.partner?.let { other ->
+                    viewModel.partnerTile?.let { (x, y) ->
+                        PlacedCharacter(other.character.name, viewModel.outfitFor(other.id), x, y, colors.sky)
+                    }
+                },
             ),
             selected = selectedArea,
             ghost = ghost,
@@ -214,16 +220,17 @@ private fun MapArea(viewModel: GameViewModel, focus: Pair<Int, Int>, modifier: M
     }
 }
 
-/** The screen's one primary action: go to bed, or start the next day once asleep. */
+/** The screen's one primary action: go to bed. Once you're asleep it shows who the day is waiting for. */
 @Composable
 private fun DayButton(viewModel: GameViewModel) {
     val character = viewModel.character
     val clock = character.clock
     if (character.asleep) {
         PrimaryButton(
-            text = "Start ${Clock.startOfDay(clock.day + 1).weekday}",
-            detail = "${character.name} is asleep",
-            onClick = viewModel::startNextDay,
+            text = "Waiting for ${viewModel.partnerName ?: "your friend"}",
+            detail = "${Clock.startOfDay(clock.day + 1).weekday} starts when they sleep",
+            onClick = {},
+            enabled = false,
             modifier = Modifier.fillMaxWidth(),
         )
     } else {
@@ -294,6 +301,28 @@ private fun HudContent(clock: Clock, name: String, mood: Int, onOpenNeeds: () ->
             .clickable(role = Role.Button, onClickLabel = "Show needs", onClick = onOpenNeeds)
             .padding(horizontal = 14.dp, vertical = 14.dp),
     )
+}
+
+/** Your partner at a glance, or, before anyone has joined, the code to send them. */
+@Composable
+private fun PartnerLine(viewModel: GameViewModel, modifier: Modifier = Modifier) {
+    val colors = OllTheme.colors
+    val partner = viewModel.partner
+    val text = when {
+        partner == null -> "Waiting for a friend · code ${viewModel.worldCode}"
+        partner.character.asleep -> "${partner.character.name} is asleep"
+        else -> "${partner.character.name} is up · ${formatTime(partner.character.clock.minute)}"
+    }
+    Row(
+        modifier = modifier
+            .clip(RoundedCornerShape(6.dp))
+            .background(if (partner == null) colors.surfaceSunken else colors.sky)
+            .padding(horizontal = 10.dp, vertical = 4.dp)
+            .semantics(mergeDescendants = true) {},
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(text, style = OllType.caption, color = if (partner == null) colors.ink else colors.onFill)
+    }
 }
 
 /** What's in the shared chest, always in view. Refined materials appear once there are some. */
