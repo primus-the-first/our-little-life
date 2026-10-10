@@ -55,7 +55,7 @@ fun LoadingScreen(text: String = "Getting your world ready…") {
 }
 
 @Composable
-fun SignInScreen(state: Session.SignedOut, onSignIn: (Activity) -> Unit) {
+fun SignInScreen(state: Session.SignedOut, onSignIn: (Activity) -> Unit, onPlaySolo: () -> Unit) {
     val colors = OllTheme.colors
     val activity = LocalContext.current as Activity
     Column(
@@ -86,6 +86,13 @@ fun SignInScreen(state: Session.SignedOut, onSignIn: (Activity) -> Unit) {
             style = OllType.caption,
             color = colors.inkMuted,
         )
+        SecondaryButton(
+            text = "Play solo on this phone",
+            detail = "No sign-in, works offline",
+            onClick = onPlaySolo,
+            enabled = !state.busy,
+            modifier = Modifier.fillMaxWidth(),
+        )
     }
 }
 
@@ -97,7 +104,13 @@ private val modeLines = mapOf(
 
 /** The lobby: the worlds you belong to, then starting a new one or joining a friend's. */
 @Composable
-fun LobbyScreen(state: Session.Lobby, onOpen: (String) -> Unit, onCreate: (Mode) -> Unit, onJoin: (String) -> Unit) {
+fun LobbyScreen(
+    state: Session.Lobby,
+    onOpen: (String) -> Unit,
+    onPlaySolo: () -> Unit,
+    onCreate: (Mode) -> Unit,
+    onJoin: (String) -> Unit,
+) {
     val colors = OllTheme.colors
     var mode by rememberSaveable { mutableStateOf(Mode.BESTIES) }
     var code by rememberSaveable { mutableStateOf("") }
@@ -114,8 +127,17 @@ fun LobbyScreen(state: Session.Lobby, onOpen: (String) -> Unit, onCreate: (Mode)
     ) {
         Text("Hi ${state.name}", style = OllType.caption, color = colors.inkMuted)
 
+        Text("Your worlds", style = OllType.display, color = colors.ink, modifier = Modifier.semantics { heading() })
+        // The solo game is always here: on this phone, no partner needed, playable offline.
+        SecondaryButton(
+            text = "Solo game",
+            detail = state.soloSummary ?: "Start playing on your own",
+            onClick = onPlaySolo,
+            enabled = !state.busy,
+            modifier = Modifier.fillMaxWidth(),
+        )
+
         if (hasWorlds) {
-            Text("Your worlds", style = OllType.display, color = colors.ink, modifier = Modifier.semantics { heading() })
             state.worlds.forEach { world ->
                 SecondaryButton(
                     text = world.partnerName?.let { "With $it" } ?: "Waiting for a friend",
@@ -161,10 +183,6 @@ fun LobbyScreen(state: Session.Lobby, onOpen: (String) -> Unit, onCreate: (Mode)
                     Text(modeLines.getValue(option), style = OllType.body, color = colors.inkMuted)
                 }
             }
-        }
-
-        state.soloSummary?.let {
-            Text("Your solo game comes with you: $it.", style = OllType.body, color = colors.ink)
         }
 
         // With worlds listed above, creating another is a secondary choice; for a first world it's the main one.

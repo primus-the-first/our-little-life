@@ -6,7 +6,12 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.ourlittlelife.game.data.Auth
+import com.ourlittlelife.game.data.SharedWorldSource
+import com.ourlittlelife.game.data.SoloWorldSource
+import com.ourlittlelife.game.data.WorldStore
 import com.ourlittlelife.game.home.GameViewModel
 import com.ourlittlelife.game.home.HomeScreen
 import com.ourlittlelife.game.session.LoadingScreen
@@ -33,12 +38,20 @@ class MainActivity : ComponentActivity() {
 private fun AppRoot(session: SessionViewModel = viewModel()) {
     when (val state = session.state) {
         Session.Loading -> LoadingScreen()
-        is Session.SignedOut -> SignInScreen(state, onSignIn = session::signIn)
-        is Session.Lobby -> LobbyScreen(state, onOpen = session::openWorld, onCreate = session::create, onJoin = session::join)
+        is Session.SignedOut -> SignInScreen(state, onSignIn = session::signIn, onPlaySolo = session::playSolo)
+        is Session.Lobby -> LobbyScreen(state, onOpen = session::openWorld, onPlaySolo = session::playSolo, onCreate = session::create, onJoin = session::join)
         is Session.InWorld -> {
             // One game per world: switching worlds gives a fresh game, never a mix of two.
             val game: GameViewModel = viewModel(key = state.worldId)
-            LaunchedEffect(state.worldId) { game.attach(state.worldId, state.uid) }
+            val context = LocalContext.current
+            LaunchedEffect(state.worldId) {
+                val source = if (state.solo) {
+                    SoloWorldSource(context.filesDir, playerName = Auth().currentUser?.let(Auth::firstName) ?: "You")
+                } else {
+                    SharedWorldSource(WorldStore(), state.worldId)
+                }
+                game.attach(source, state.uid)
+            }
             if (game.ready) HomeScreen(game, onBackToLobby = session::backToLobby) else LoadingScreen()
         }
     }

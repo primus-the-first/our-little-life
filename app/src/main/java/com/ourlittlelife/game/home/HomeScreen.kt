@@ -311,6 +311,7 @@ private fun PartnerLine(viewModel: GameViewModel, modifier: Modifier = Modifier)
     val colors = OllTheme.colors
     val partner = viewModel.partner
     val text = when {
+        viewModel.isSolo -> "Playing solo · saved on this phone"
         partner == null -> "Waiting for a friend · code ${viewModel.worldCode}"
         partner.character.asleep -> "${partner.character.name} is asleep"
         else -> "${partner.character.name} is up · ${formatTime(partner.character.clock.minute)}"
@@ -572,8 +573,12 @@ private fun NeedsSheet(viewModel: GameViewModel, onDismiss: () -> Unit, onBackTo
 
             Text("This world", style = OllType.heading, color = colors.ink, modifier = Modifier.semantics { heading() })
             Text(
-                "Code ${viewModel.worldCode}. Share it so a friend can join" +
-                    (viewModel.partnerName?.let { ". You're playing with $it." } ?: "."),
+                if (viewModel.isSolo) {
+                    "Your solo game, saved on this phone. To play with someone, start or join a shared world from the lobby."
+                } else {
+                    "Code ${viewModel.worldCode}. Share it so a friend can join" +
+                        (viewModel.partnerName?.let { ". You're playing with $it." } ?: ".")
+                },
                 style = OllType.body,
                 color = colors.inkMuted,
             )

@@ -11,9 +11,8 @@ import androidx.lifecycle.viewModelScope
 import com.google.firebase.auth.FirebaseUser
 import com.ourlittlelife.game.data.Auth
 import com.ourlittlelife.game.data.WorldStore
-import com.ourlittlelife.game.home.SaveStore
+import com.ourlittlelife.game.data.SoloWorldSource
 import com.ourlittlelife.rules.Mode
-import com.ourlittlelife.rules.Resource
 import kotlinx.coroutines.launch
 
 /** Where the player is in getting to a world. */
@@ -31,14 +30,14 @@ sealed interface Session {
         val busy: Boolean = false,
     ) : Session
 
-    data class InWorld(val worldId: String, val uid: String) : Session
+    /** In a world: shared, or the solo game saved on this phone. */
+    data class InWorld(val worldId: String, val uid: String, val solo: Boolean = false) : Session
 }
 
 class SessionViewModel(application: Application) : AndroidViewModel(application) {
 
     private val auth = Auth()
     private val store = WorldStore()
-    private val soloSave = SaveStore(application.filesDir)
     private val prefs = application.getSharedPreferences("session", Context.MODE_PRIVATE)
 
     /** The world to reopen on launch. */
@@ -53,6 +52,8 @@ class SessionViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             auth.users().collect { user ->
                 state = when {
+                    user == null && lastWorldId == SoloWorldSource.SOLO_ID ->
+                        Session.InWorld(SoloWorldSource.SOLO_ID, SoloWorldSource.PLAYER_ID, solo = true)
                     user == null -> Session.SignedOut()
                     else -> reopenOrLobby(user)
                 }
@@ -66,6 +67,7 @@ class SessionViewModel(application: Application) : AndroidViewModel(application)
         val last = lastWorldId
         return when {
             lobby !is Session.Lobby -> lobby
+            last == SoloWorldSource.SOLO_ID -> Session.InWorld(last, SoloWorldSource.PLAYER_ID, solo = true)
             last != null && lobby.worlds.any { it.id == last } -> Session.InWorld(last, user.uid)
             lobby.worlds.size == 1 && last == null -> enter(lobby.worlds.first().id, user.uid)
             else -> lobby
@@ -74,18 +76,18 @@ class SessionViewModel(application: Application) : AndroidViewModel(application)
 
     private suspend fun lobbyFor(user: FirebaseUser, error: String? = null): Session = try {
         val worlds = store.worldsFor(user.uid)
-        Session.Lobby(user.uid, Auth.firstName(user), worlds, soloSummary().takeIf { worlds.isEmpty() }, error)
+        Session.Lobby(user.uid, Auth.firstName(user), worlds, soloSummary(), error)
     } catch (e: Exception) {
         Session.Lobby(user.uid, Auth.firstName(user), emptyList(), null, "Couldn't reach the game. Check your connection and try again.")
     }
 
-    /** "Day 3 · 18 wood, 8 stone": a solo game that comes along into your first world. */
-    private fun soloSummary(): String? {
-        val solo = soloSave.load() ?: return null
-        val stock = Resource.entries.filter { solo.camp.storage[it] > 0 }
-            .joinToString(", ") { "${solo.camp.storage[it]} ${it.label.lowercase()}" }
-        val rooms = if (solo.camp.plot.rooms.isNotEmpty()) " · ${solo.camp.plot.rooms.size} room built" else ""
-        return "Day ${solo.character.clock.day}" + (if (stock.isNotEmpty()) " · $stock" else "") + rooms
+    /** "Day 3 · 1 room built" for the solo game on this phone, or null if there isn't one yet. */
+    private fun soloSummary(): String? = SoloWorldSource.summary(getApplication<Application>().filesDir)
+
+    /** The solo game: no sign-in needed, saved on this phone, playable offline. */
+    fun playSolo() {
+        lastWorldId = SoloWorldSource.SOLO_ID
+        state = Session.InWorld(SoloWorldSource.SOLO_ID, SoloWorldSource.PLAYER_ID, solo = true)
     }
 
     private fun enter(worldId: String, uid: String): Session {
@@ -111,8 +113,11 @@ class SessionViewModel(application: Application) : AndroidViewModel(application)
 
     /** Leaves the world you're in for the lobby. You stay a member and can come back any time. */
     fun backToLobby() {
-        val user = auth.currentUser ?: return
         lastWorldId = null
+        val user = auth.currentUser ?: run {
+            state = Session.SignedOut()
+            return
+        }
         state = Session.Loading
         viewModelScope.launch { state = lobbyFor(user) }
     }
@@ -122,9 +127,7 @@ class SessionViewModel(application: Application) : AndroidViewModel(application)
         state = lobby.copy(busy = true, error = null)
         viewModelScope.launch {
             state = try {
-                // A solo game only comes along into your first world.
-                val solo = if (lobby.worlds.isEmpty()) soloSave.load() else null
-                enter(store.create(lobby.uid, lobby.name, mode, solo), lobby.uid)
+                enter(store.create(lobby.uid, lobby.name, mode, solo = null), lobby.uid)
             } catch (e: Exception) {
                 lobby.copy(busy = false, error = "Couldn't create the world. Check your connection and try again.")
             }

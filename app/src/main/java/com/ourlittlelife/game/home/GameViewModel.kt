@@ -6,7 +6,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.ourlittlelife.game.data.WorldStore
+import com.ourlittlelife.game.data.WorldSource
 import com.ourlittlelife.game.day.describeShortfall
 import com.ourlittlelife.rules.Action
 import com.ourlittlelife.rules.ActionResult
@@ -47,9 +47,11 @@ sealed interface Selection {
  */
 class GameViewModel(application: Application) : AndroidViewModel(application) {
 
-    private val store = WorldStore()
-    private var worldId = ""
+    private lateinit var source: WorldSource
     private var myId = ""
+
+    /** True for the solo game on this phone; false for a shared world. */
+    val isSolo: Boolean get() = source.solo
 
     var world by mutableStateOf<World?>(null)
         private set
@@ -93,13 +95,13 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     private var partnerJob: Job? = null
     private var attached = false
 
-    fun attach(worldId: String, uid: String) {
+    fun attach(source: WorldSource, uid: String) {
         if (attached) return
         attached = true
-        this.worldId = worldId
+        this.source = source
         myId = uid
         viewModelScope.launch {
-            store.observe(worldId)
+            source.observe()
                 .catch { message = "Lost touch with your world. Check your connection." }
                 .collect(::onWorld)
         }
@@ -152,7 +154,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             try {
                 // A transaction may run more than once; the last run is the one that counts.
                 val applied = AtomicBoolean(false)
-                val saved = store.update(worldId) { w -> change(w).also { applied.set(it != null) } }
+                val saved = source.update { w -> change(w).also { applied.set(it != null) } }
                 world = saved
                 onSaved(applied.get())
             } catch (e: Exception) {
