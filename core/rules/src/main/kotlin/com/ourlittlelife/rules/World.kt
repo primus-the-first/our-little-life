@@ -63,7 +63,7 @@ object Worlds {
     const val AUTOPILOT_AFTER_MILLIS = 24 * 60 * 60 * 1000L
 
     /** Where players appear: beside the campfire, one on each side. */
-    private val spawnTiles = listOf(11 to 11, 13 to 11)
+    private val spawnTiles = listOf(11 to 11, 13 to 11).map { (x, y) -> x + WorldMap.YARD.x to y + WorldMap.YARD.y }
 
     private val json = Json {
         encodeDefaults = true
@@ -75,7 +75,7 @@ object Worlds {
 
     fun create(id: String, code: String, mode: Mode, hostId: String, hostName: String): World {
         val (x, y) = spawnTiles.first()
-        return World(id, code, mode, Camp(StarterPlot.create()), mapOf(hostId to Player(hostId, Character(hostName), x, y)))
+        return World(id, code, mode, Camp(WorldMap.expand(StarterPlot.create())), mapOf(hostId to Player(hostId, Character(hostName), x, y)))
     }
 
     /** The second player joins on the world's current day, at the free spot by the fire. */
@@ -138,5 +138,6 @@ object Worlds {
 
     fun encode(world: World): String = json.encodeToString(World.serializer(), world)
 
-    fun decode(text: String): World = json.decodeFromString(World.serializer(), text)
+    /** Older saves are moved into the bigger map as they load. */
+    fun decode(text: String): World = WorldMap.upgrade(json.decodeFromString(World.serializer(), text))
 }

@@ -13,6 +13,8 @@ enum class ObjectKind(val label: String, val width: Int = 1, val height: Int = 1
     TREE("Oak tree"),
     ROCK("Rock"),
     BUSH("Berry bush"),
+    BENCH("Bench on the hill"),
+    RACE_SIGN("Racecourse"),
 }
 
 @Serializable
@@ -25,9 +27,20 @@ data class PlotObject(val id: String, val kind: ObjectKind, val x: Int, val y: I
         (x until x + kind.width).flatMap { tx -> (y until y + kind.height).map { ty -> tx to ty } }
 }
 
-/** The shared piece of land, [size] × [size] tiles, with x running right and y running down. */
+/**
+ * The shared land, [size] × [size] tiles, with x running right and y running down.
+ * Rooms go only in the [yard]. With [surroundings], the land beyond the yard follows [WorldMap].
+ */
 @Serializable
-data class Plot(val size: Int, val objects: List<PlotObject>, val rooms: List<Room> = emptyList()) {
+data class Plot(
+    val size: Int,
+    val objects: List<PlotObject>,
+    val rooms: List<Room> = emptyList(),
+    val yard: Area = Area(0, 0, size, size),
+    val surroundings: Boolean = false,
+) {
+
+    fun terrainAt(tileX: Int, tileY: Int): Terrain = if (surroundings) WorldMap.terrainAt(tileX, tileY) else Terrain.GRASS
 
     fun objectAt(tileX: Int, tileY: Int): PlotObject? = objects.firstOrNull { it.covers(tileX, tileY) }
 
@@ -77,7 +90,8 @@ object ObjectActions {
         ObjectKind.ROCK -> listOf(Gathering.breakRock)
         ObjectKind.BUSH -> listOf(Gathering.pickFiber)
         ObjectKind.WORKBENCH -> listOf(Refining.sawPlanks, Refining.fireBricks, Refining.weaveCloth)
-        // The chest just shows what's stored.
-        ObjectKind.CHEST -> emptyList()
+        ObjectKind.BENCH -> listOf(StarterActions.stargaze, Outdoors.sit)
+        // The chest just shows what's stored; the racecourse isn't open yet.
+        ObjectKind.CHEST, ObjectKind.RACE_SIGN -> emptyList()
     }
 }

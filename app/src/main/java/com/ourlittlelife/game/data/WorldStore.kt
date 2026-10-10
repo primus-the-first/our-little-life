@@ -7,6 +7,7 @@ import com.ourlittlelife.rules.JoinResult
 import com.ourlittlelife.rules.Mode
 import com.ourlittlelife.rules.SaveGame
 import com.ourlittlelife.rules.World
+import com.ourlittlelife.rules.WorldMap
 import com.ourlittlelife.rules.Worlds
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
@@ -54,8 +55,10 @@ class WorldStore(private val db: FirebaseFirestore = FirebaseFirestore.getInstan
         var world = Worlds.create(ref.id, code, mode, uid, name)
         if (solo != null) {
             val host = world.player(uid)
-            world = world.copy(camp = solo.camp).withPlayer(
-                host.copy(character = solo.character.copy(name = name, asleep = false), tileX = solo.tileX, tileY = solo.tileY),
+            world = WorldMap.upgrade(
+                world.copy(camp = solo.camp).withPlayer(
+                    host.copy(character = solo.character.copy(name = name, asleep = false), tileX = solo.tileX, tileY = solo.tileY),
+                ),
             )
         }
         ref.set(

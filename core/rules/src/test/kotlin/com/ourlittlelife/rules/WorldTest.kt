@@ -18,7 +18,7 @@ class WorldTest {
     fun `a new world has a starter plot and its host`() {
         assertEquals(listOf("jo"), solo.players.keys.toList())
         assertEquals("Jo", solo.players.getValue("jo").character.name)
-        assertEquals(StarterPlot.create(), solo.camp.plot)
+        assertEquals(WorldMap.expand(StarterPlot.create()), solo.camp.plot)
         assertEquals(1, solo.day)
     }
 

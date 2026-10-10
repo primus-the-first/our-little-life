@@ -206,6 +206,7 @@ private fun MapArea(viewModel: GameViewModel, focus: Pair<Int, Int>, modifier: M
             selected = selectedArea,
             ghost = ghost,
             focusTile = focus,
+            showYard = viewModel.buildMode,
             onTapTile = viewModel::tapTile,
             modifier = Modifier.fillMaxSize(),
         )
@@ -445,7 +446,10 @@ private fun ObjectSheet(obj: PlotObject, viewModel: GameViewModel, minutesLeft: 
     }
 }
 
-private fun comingSoon(kind: ObjectKind): String = "Nothing to do here yet."
+private fun comingSoon(kind: ObjectKind): String = when (kind) {
+    ObjectKind.RACE_SIGN -> "The racecourse is fenced off for now. Races are on the way."
+    else -> "Nothing to do here yet."
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -534,7 +538,7 @@ private fun GroundSheet(ground: Selection.Ground, viewModel: GameViewModel, minu
 }
 
 private fun placementProblem(placement: Placement): String = when (placement) {
-    Placement.OffPlot -> "Too close to the edge"
+    Placement.OffPlot -> "Rooms go inside your yard"
     Placement.Blocked -> "Something's in the way"
     Placement.CabinFirst -> "Build the cabin first"
     Placement.NotConnected -> "Has to join an existing room"

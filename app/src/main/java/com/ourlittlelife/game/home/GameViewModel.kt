@@ -22,6 +22,7 @@ import com.ourlittlelife.rules.PlotObject
 import com.ourlittlelife.rules.Resource
 import com.ourlittlelife.rules.Room
 import com.ourlittlelife.rules.StarterActions
+import com.ourlittlelife.rules.Terrain
 import com.ourlittlelife.rules.Together
 import com.ourlittlelife.rules.RoomActions
 import com.ourlittlelife.rules.RoomKind
@@ -69,7 +70,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     val worldCode: String get() = world!!.code
 
     /** Where this player is drawn. Runs ahead of the saved position while walking. */
-    var characterTile by mutableStateOf(11 to 11)
+    var characterTile by mutableStateOf(0 to 0)
         private set
 
     val partner: Player? get() = world?.players?.values?.firstOrNull { it.id != myId }
@@ -213,6 +214,8 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             tapped == characterTile -> selection = Selection.Person(myId)
             partner != null && tapped == partnerTile -> selection = Selection.Person(partner!!.id)
             thing != null -> selection = Selection.Thing(thing)
+            plot.terrainAt(x, y) == Terrain.WATER -> message = "The pond. Fishing is on the way."
+            plot.terrainAt(x, y) == Terrain.TRACK -> message = "The racecourse is fenced off for now. Races are on the way."
             buildMode && room == null -> selection = Selection.Ground(x, y)
             character.asleep -> message = "You're asleep. The day starts when everyone has gone to bed."
             else -> walkTo(x to y, saveOnArrival = true) {

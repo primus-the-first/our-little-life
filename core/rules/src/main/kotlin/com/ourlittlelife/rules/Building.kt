@@ -56,7 +56,7 @@ object Building {
      * nothing may be in the way, and every later room shares a wall with one already built.
      */
     fun check(plot: Plot, kind: RoomKind, x: Int, y: Int): Placement {
-        if (x < 0 || y < 0 || x + kind.width > plot.size || y + kind.height > plot.size) return Placement.OffPlot
+        if (!plot.yard.contains(Area(x, y, kind.width, kind.height))) return Placement.OffPlot
         if (plot.rooms.any { it.kind == kind }) return Placement.AlreadyBuilt
         if (kind != RoomKind.CABIN && plot.rooms.none { it.kind == RoomKind.CABIN }) return Placement.CabinFirst
 

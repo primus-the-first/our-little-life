@@ -3,6 +3,7 @@ package com.ourlittlelife.game.data
 import com.ourlittlelife.game.home.SaveStore
 import com.ourlittlelife.rules.Mode
 import com.ourlittlelife.rules.World
+import com.ourlittlelife.rules.WorldMap
 import com.ourlittlelife.rules.Worlds
 import java.io.File
 import kotlinx.coroutines.flow.Flow
@@ -44,8 +45,11 @@ class SoloWorldSource(directory: File, private val playerName: String) : WorldSo
         val fresh = Worlds.create(SOLO_ID, "SOLO", Mode.BESTIES, PLAYER_ID, playerName)
         val old = SaveStore(file.parentFile!!).load() ?: return fresh
         val player = fresh.player(PLAYER_ID)
-        return fresh.copy(camp = old.camp).withPlayer(
-            player.copy(character = old.character.copy(name = playerName, asleep = false), tileX = old.tileX, tileY = old.tileY),
+        // The old save is a 24×24 plot; upgrading moves it into the yard of the bigger map.
+        return WorldMap.upgrade(
+            fresh.copy(camp = old.camp).withPlayer(
+                player.copy(character = old.character.copy(name = playerName, asleep = false), tileX = old.tileX, tileY = old.tileY),
+            ),
         )
     }
 

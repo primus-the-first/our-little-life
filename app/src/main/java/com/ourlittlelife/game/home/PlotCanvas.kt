@@ -53,9 +53,6 @@ data class TileArea(val x: Int, val y: Int, val width: Int, val height: Int)
 /** A see-through room outline shown before building; [fits] says whether it can go there. */
 data class Ghost(val area: TileArea, val fits: Boolean)
 
-/** The tiles under the camp, drawn as bare dirt. */
-private val campArea = 8..15 to 8..13
-
 /**
  * The plot in pixel art. Pinch to zoom, drag to pan, tap a tile to select what stands there.
  * Sprites are always scaled by whole numbers so pixels stay square.
@@ -67,6 +64,7 @@ fun PlotCanvas(
     selected: TileArea?,
     ghost: Ghost?,
     focusTile: Pair<Int, Int>,
+    showYard: Boolean,
     onTapTile: (Int, Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -89,7 +87,8 @@ fun PlotCanvas(
 
     // Zoom is measured in whole multiples of the 16 px source tile; start so a tile is a comfortable tap target.
     val density = LocalDensity.current
-    val minScale = 3f
+    // Zoomed right out, the whole world fits on a phone; taps still work, just smaller.
+    val minScale = 2f
     val maxScale = 12f
     val startScale = with(density) { ceil(44.dp.toPx() / Sprites.TILE) }.coerceIn(minScale, maxScale)
     var scale by remember { mutableFloatStateOf(startScale) }
@@ -104,7 +103,7 @@ fun PlotCanvas(
 
     Canvas(
         modifier = modifier
-            .semantics { contentDescription = "Your plot. Tap something to see what you can do with it." }
+            .semantics { contentDescription = "Your yard and the land around it. Tap something to see what you can do with it." }
             .pointerInput(plot) {
                 detectTransformGestures { centroid, dragged, zoom, _ ->
                     val oldTile = tilePx(scale)
@@ -154,8 +153,18 @@ fun PlotCanvas(
         val firstY = floor(-origin.y / tile).toInt().coerceAtLeast(0)
         val lastY = ceil((size.height - origin.y) / tile).toInt().coerceAtMost(plot.size - 1)
         for (tx in firstX..lastX) for (ty in firstY..lastY) {
-            val bare = tx in campArea.first && ty in campArea.second
-            sprite(if (bare) Sprites.dirt else Sprites.grass, tx, ty)
+            Sprites.ground(plot, tx, ty).forEach { layer -> sprite(layer, tx, ty) }
+        }
+
+        // In build mode, a dashed edge shows where your yard ends.
+        if (showYard && plot.surroundings) {
+            val yard = plot.yard
+            drawRect(
+                color = colors.ink.copy(alpha = 0.6f),
+                topLeft = Offset(origin.x + yard.x * tile, origin.y + yard.y * tile),
+                size = Size(yard.width * tile, yard.height * tile),
+                style = Stroke(width = 2.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(10.dp.toPx(), 6.dp.toPx()))),
+            )
         }
 
         // Rooms: a plank floor inside a wooden wall, with the room's name in the corner.

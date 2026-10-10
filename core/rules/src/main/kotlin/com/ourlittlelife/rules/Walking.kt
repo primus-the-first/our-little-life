@@ -8,10 +8,11 @@ object Walking {
 
     private val directions = listOf(1 to 0, -1 to 0, 0 to 1, 0 to -1)
 
-    /** Free to stand on: inside the plot, nothing built on it, and nobody else standing there. */
+    /** Free to stand on: inside the plot, not water or fenced off, nothing built on it, and nobody else standing there. */
     fun isWalkable(plot: Plot, tile: Pair<Int, Int>, occupied: Set<Pair<Int, Int>> = emptySet()): Boolean {
         val (x, y) = tile
-        return x in 0 until plot.size && y in 0 until plot.size && plot.objectAt(x, y) == null && tile !in occupied
+        return x in 0 until plot.size && y in 0 until plot.size && !plot.terrainAt(x, y).blocks &&
+            plot.objectAt(x, y) == null && tile !in occupied
     }
 
     /**
