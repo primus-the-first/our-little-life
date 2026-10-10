@@ -72,10 +72,6 @@ class GatheringTest {
 
     @Test
     fun `a refused gather changes nothing`() {
-        val late = jo.copy(clock = Clock(1, Rules.DAY_END - 30))
-        val result = camp.use(late, tree, Gathering.chop)
-        assertEquals(UseResult.Refused(ActionResult.NotEnoughTime(30)), result)
-
         val asleep = Rules.sleep(jo)
         assertEquals(UseResult.Refused(ActionResult.Asleep), camp.use(asleep, tree, Gathering.chop))
     }

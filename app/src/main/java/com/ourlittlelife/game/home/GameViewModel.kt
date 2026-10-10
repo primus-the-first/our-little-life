@@ -252,7 +252,6 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         return when {
             character.asleep -> "You're asleep"
             other.character.asleep -> "${other.character.name} is asleep"
-            character.clock.minutesLeft < Walks.together.minutes -> "Not enough time left today"
             else -> null
         }
     }
@@ -387,7 +386,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         val company = partnerName
         commit(onSaved = { applied ->
             message = when {
-                !applied -> "Not enough time left today to stay out. Maybe tomorrow night."
+                !applied -> "You're asleep. The sky will be there tomorrow night."
                 social > 0 && company != null -> "A lovely night with $company. +20 fun, +$social social."
                 else -> "What a sky. +20 fun."
             }
@@ -398,10 +397,6 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     fun askForWalk() {
         selection = null
         val name = partnerName ?: return
-        if (character.clock.minutesLeft < Walks.together.minutes) {
-            message = "Not enough time left today for a walk."
-            return
-        }
         message = "You asked $name for a walk. They'll see it on their map."
         commit(onSaved = { applied -> if (!applied) message = "$name can't walk right now." }) { w -> Walks.invite(w, myId) }
     }
@@ -415,7 +410,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     fun acceptWalk() {
         val local = world ?: return
         if (Walks.accept(local, myId) == null) {
-            message = "One of you doesn't have an hour left today. Maybe tomorrow."
+            message = "That walk isn't on any more."
             return
         }
         val from = characterTile
@@ -428,7 +423,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     /** From the trailhead sign: round the loop on your own, then the hour is spent. */
     private fun walkAlone(sign: PlotObject) {
         tour(withPartner = false, iLead = true, from = characterTile) {
-            commit(onSaved = { applied -> message = if (applied) "A quiet walk in the forest. +12 fun." else "Not enough time left today for a walk." }) { w ->
+            commit(onSaved = { applied -> message = if (applied) "A quiet walk in the forest. +12 fun." else "You're asleep. The trail will be there tomorrow." }) { w ->
                 val p = w.player(myId)
                 when (val fresh = w.camp.use(p.character, sign, Walks.alone)) {
                     is UseResult.Done -> w.copy(camp = fresh.camp)
@@ -486,10 +481,8 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         commit { w -> w.copy(camp = w.camp.copy(storage = w.camp.storage.plus(Resource.entries.associateWith { 100 }))) }
     }
 
-    private fun refusal(reason: ActionResult): String = when (reason) {
-        is ActionResult.NotEnoughTime -> "Not enough time left today for that. Try something shorter, or go to bed."
-        else -> "You're asleep. The day starts when everyone has gone to bed."
-    }
+    @Suppress("UNUSED_PARAMETER")
+    private fun refusal(reason: ActionResult): String = "You're asleep. The day starts when everyone has gone to bed."
 }
 
 /** How long each step takes. The canvas glides a character across a tile in exactly this time. */

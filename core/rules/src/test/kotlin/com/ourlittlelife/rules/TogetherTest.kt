@@ -68,11 +68,7 @@ class TogetherTest {
     }
 
     @Test
-    fun `no time left or asleep means no stargazing`() {
-        val late = world(mayaAt = 20 to 20).let { w ->
-            w.withPlayer(w.player("jo").let { it.copy(character = it.character.copy(clock = Clock(1, Rules.DAY_END - 30))) })
-        }
-        assertNull(Together.stargaze(late, "jo"))
+    fun `asleep means no stargazing`() {
         assertNull(Together.stargaze(Worlds.sleep(world(mayaAt = 20 to 20), "jo", 0), "jo"))
     }
 

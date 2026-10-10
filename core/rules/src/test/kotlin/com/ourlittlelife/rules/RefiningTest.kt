@@ -56,10 +56,9 @@ class RefiningTest {
     }
 
     @Test
-    fun `a refusal for time or sleep takes no materials`() {
+    fun `a refusal for sleep takes no materials`() {
         val camp = campWith(Resource.WOOD to 10)
-        val late = jo.copy(clock = Clock(1, Rules.DAY_END - 30))
-        assertEquals(UseResult.Refused(ActionResult.NotEnoughTime(30)), camp.use(late, workbench, Refining.sawPlanks))
+        assertEquals(UseResult.Refused(ActionResult.Asleep), camp.use(Rules.sleep(jo), workbench, Refining.sawPlanks))
     }
 
     @Test

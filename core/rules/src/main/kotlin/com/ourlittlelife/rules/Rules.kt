@@ -35,16 +35,17 @@ object Rules {
     fun decay(minutes: Int): Map<Need, Int> =
         decayPerHour.mapValues { (_, perHour) -> -(perHour * minutes / 60.0).roundToInt() }
 
+    /**
+     * Does [action]. Time never stops you: the clock moves on but stops at 11pm, and the
+     * action still wears on your needs, so tiredness and hunger are what end a day.
+     */
     fun perform(character: Character, action: Action): ActionResult {
         if (character.asleep) return ActionResult.Asleep
-        if (action.minutes > character.clock.minutesLeft) {
-            return ActionResult.NotEnoughTime(character.clock.minutesLeft)
-        }
         val changes = sum(decay(action.minutes), action.effects)
         return ActionResult.Done(
             character.copy(
                 needs = character.needs.plus(changes),
-                clock = character.clock.copy(minute = character.clock.minute + action.minutes),
+                clock = character.clock.copy(minute = (character.clock.minute + action.minutes).coerceAtMost(DAY_END)),
             ),
         )
     }

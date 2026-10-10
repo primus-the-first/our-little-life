@@ -146,9 +146,9 @@ fun HomeScreen(viewModel: GameViewModel = viewModel(), onBackToLobby: () -> Unit
     }
 
     when (val selection = viewModel.selection) {
-        is Selection.Thing -> ObjectSheet(selection.obj, viewModel, clock.minutesLeft, character.asleep)
-        is Selection.InRoom -> RoomSheet(selection.room, viewModel, clock.minutesLeft, character.asleep)
-        is Selection.Ground -> GroundSheet(selection, viewModel, clock.minutesLeft, character.asleep)
+        is Selection.Thing -> ObjectSheet(selection.obj, viewModel, character.asleep)
+        is Selection.InRoom -> RoomSheet(selection.room, viewModel, character.asleep)
+        is Selection.Ground -> GroundSheet(selection, viewModel, character.asleep)
         is Selection.Person -> PersonSheet(selection.playerId, viewModel)
         null -> Unit
     }
@@ -317,7 +317,7 @@ private fun HudContent(clock: Clock, name: String, mood: Int, onOpenNeeds: () ->
             modifier = Modifier.semantics { heading() },
         )
         Text(
-            "${formatTime(clock.minute)} · ${formatDuration(clock.minutesLeft)} left",
+            if (clock.minutesLeft > 0) "${formatTime(clock.minute)} · ${formatDuration(clock.minutesLeft)} left" else "${formatTime(clock.minute)} · Late night",
             style = OllType.stat,
             color = colors.inkMuted,
         )
@@ -433,7 +433,7 @@ private fun WalkCard(text: String, yes: Pair<String, () -> Unit>?, no: Pair<Stri
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ObjectSheet(obj: PlotObject, viewModel: GameViewModel, minutesLeft: Int, asleep: Boolean) {
+private fun ObjectSheet(obj: PlotObject, viewModel: GameViewModel, asleep: Boolean) {
     val colors = OllTheme.colors
     val actions = viewModel.actionsFor(obj)
     ModalBottomSheet(
@@ -462,7 +462,6 @@ private fun ObjectSheet(obj: PlotObject, viewModel: GameViewModel, minutesLeft: 
                 obj.kind == ObjectKind.CHEST -> ChestContents(viewModel.camp.storage)
                 actions.isEmpty() -> Text(comingSoon(obj.kind), style = OllType.body, color = colors.inkMuted)
                 else -> actions.forEach { action ->
-                    val fits = action.minutes <= minutesLeft
                     val grown = usesLeft > 0
                     val short = viewModel.camp.storage.shortfall(action.costs)
                     SecondaryButton(
@@ -470,17 +469,28 @@ private fun ObjectSheet(obj: PlotObject, viewModel: GameViewModel, minutesLeft: 
                         detail = when {
                             !grown -> "Grows back tomorrow"
                             short.isNotEmpty() -> describeShortfall(short)
-                            !fits -> "Not enough time today"
                             else -> describe(action)
                         },
-                        enabled = fits && grown && short.isEmpty(),
+                        enabled = grown && short.isEmpty(),
                         onClick = { viewModel.perform(obj, action) },
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }
             }
+            if (!asleep && obj.kind == ObjectKind.TENT) SleepHereButton(viewModel)
         }
     }
+}
+
+/** Going to bed for the night from the bed itself, same as the "Go to bed" button. */
+@Composable
+private fun SleepHereButton(viewModel: GameViewModel) {
+    SecondaryButton(
+        text = "Sleep for the night",
+        detail = viewModel.partner?.let { if (it.character.asleep) "Starts the next day" else "Then wait for ${it.character.name}" } ?: "Starts the next day",
+        onClick = viewModel::sleep,
+        modifier = Modifier.fillMaxWidth(),
+    )
 }
 
 private fun comingSoon(kind: ObjectKind): String = when (kind) {
@@ -490,7 +500,7 @@ private fun comingSoon(kind: ObjectKind): String = when (kind) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun RoomSheet(room: Room, viewModel: GameViewModel, minutesLeft: Int, asleep: Boolean) {
+private fun RoomSheet(room: Room, viewModel: GameViewModel, asleep: Boolean) {
     val colors = OllTheme.colors
     ModalBottomSheet(
         onDismissRequest = viewModel::dismissSelection,
@@ -508,12 +518,11 @@ private fun RoomSheet(room: Room, viewModel: GameViewModel, minutesLeft: Int, as
             if (asleep) {
                 Text("Everyone's asleep. Start the next day first.", style = OllType.body, color = colors.inkMuted)
             } else {
+                if (room.kind == RoomKind.CABIN) SleepHereButton(viewModel)
                 viewModel.actionsFor(room).forEach { action ->
-                    val fits = action.minutes <= minutesLeft
                     SecondaryButton(
                         text = action.name,
-                        detail = if (fits) describe(action) else "Not enough time today",
-                        enabled = fits,
+                        detail = describe(action),
                         onClick = { viewModel.perform(room, action) },
                         modifier = Modifier.fillMaxWidth(),
                     )
@@ -526,7 +535,7 @@ private fun RoomSheet(room: Room, viewModel: GameViewModel, minutesLeft: Int, as
 /** Tapping empty grass: offer to build a room there, with the outline already shown on the map. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun GroundSheet(ground: Selection.Ground, viewModel: GameViewModel, minutesLeft: Int, asleep: Boolean) {
+private fun GroundSheet(ground: Selection.Ground, viewModel: GameViewModel, asleep: Boolean) {
     val colors = OllTheme.colors
     val options = viewModel.buildOptions()
     ModalBottomSheet(
@@ -553,14 +562,12 @@ private fun GroundSheet(ground: Selection.Ground, viewModel: GameViewModel, minu
                     options.forEach { kind ->
                         val placement = viewModel.placement(kind, ground.x, ground.y)
                         val short = viewModel.camp.storage.shortfall(kind.costs)
-                        val time = Building.actionFor(kind).minutes
-                        val ready = placement == Placement.Ok && short.isEmpty() && time <= minutesLeft
+                        val ready = placement == Placement.Ok && short.isEmpty()
                         SecondaryButton(
                             text = "Build the ${kind.label.lowercase()} here",
                             detail = when {
                                 placement != Placement.Ok -> placementProblem(placement)
                                 short.isNotEmpty() -> describeShortfall(short)
-                                time > minutesLeft -> "Not enough time today"
                                 else -> describe(Building.actionFor(kind))
                             },
                             enabled = ready,
@@ -657,7 +664,7 @@ private fun PersonSheet(playerId: String, viewModel: GameViewModel) {
             val status = when {
                 person.asleep -> "Asleep"
                 activity != null -> activity.label
-                else -> "Up · ${formatTime(person.clock.minute)} · ${formatDuration(person.clock.minutesLeft)} left today"
+                else -> "Up · ${formatTime(person.clock.minute)}"
             }
             Text("Day ${person.clock.day} · $status", style = OllType.body, color = colors.inkMuted)
 

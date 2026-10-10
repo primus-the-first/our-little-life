@@ -67,11 +67,11 @@ class WalksTest {
     }
 
     @Test
-    fun `saying yes needs an open invite and an hour left for both`() {
+    fun `saying yes needs an open invite, and late at night is fine`() {
         assertNull(Walks.accept(world, "maya"))
         val asked = assertNotNull(Walks.invite(world, "jo"))
         val late = asked.withPlayer(asked.player("jo").let { it.copy(character = it.character.copy(clock = Clock(1, Rules.DAY_END - 30))) })
-        assertNull(Walks.accept(late, "maya"))
+        assertEquals(Rules.DAY_END, assertNotNull(Walks.accept(late, "maya")).player("jo").character.clock.minute)
     }
 
     @Test

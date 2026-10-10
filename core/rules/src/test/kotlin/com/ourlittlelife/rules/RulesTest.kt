@@ -60,10 +60,12 @@ class RulesTest {
     }
 
     @Test
-    fun `an action that runs past 11pm is refused`() {
+    fun `late at night you can still do things, and the clock stops at 11pm`() {
         val late = Character("Jo", clock = Clock(1, Rules.DAY_END - 20))
-        val result = Rules.perform(late, StarterActions.wash)
-        assertEquals(ActionResult.NotEnoughTime(20), result)
+        val done = assertIs<ActionResult.Done>(Rules.perform(late, StarterActions.wash)).character
+        assertEquals(Rules.DAY_END, done.clock.minute)
+        val again = assertIs<ActionResult.Done>(Rules.perform(done, StarterActions.wash)).character
+        assertEquals(Rules.DAY_END, again.clock.minute)
     }
 
     @Test

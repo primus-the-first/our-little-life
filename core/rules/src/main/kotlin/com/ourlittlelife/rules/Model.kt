@@ -103,6 +103,5 @@ data class Character(
 
 sealed interface ActionResult {
     data class Done(val character: Character) : ActionResult
-    data class NotEnoughTime(val minutesLeft: Int) : ActionResult
     data object Asleep : ActionResult
 }
