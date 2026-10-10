@@ -10,6 +10,7 @@ import kotlin.math.sin
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -64,6 +65,7 @@ fun PlotCanvas(
     selected: TileArea?,
     ghost: Ghost?,
     focusTile: Pair<Int, Int>,
+    follow: Boolean,
     showYard: Boolean,
     onTapTile: (Int, Int) -> Unit,
     modifier: Modifier = Modifier,
@@ -95,6 +97,9 @@ fun PlotCanvas(
 
     // Null until the player drags: until then the view stays centred on [focusTile] at whatever size it has.
     var userPan by remember { mutableStateOf<Offset?>(null) }
+
+    // When the map starts following someone (a walk round the forest), drop any manual pan.
+    LaunchedEffect(follow) { if (follow) userPan = null }
 
     fun centred(width: Int, height: Int, tile: Float) = clampPan(
         Offset(width / 2f - (focusTile.first + 0.5f) * tile, height / 2f - (focusTile.second + 0.5f) * tile),

@@ -97,6 +97,13 @@ class WorldMapTest {
     }
 
     @Test
+    fun `a world from before something new was added outside gets it on load`() {
+        val fresh = Worlds.create("w", "KQ7XMB", Mode.BESTIES, "jo", "Jo")
+        val before = fresh.copy(camp = fresh.camp.copy(plot = fresh.camp.plot.copy(objects = fresh.camp.plot.objects.filter { it.kind != ObjectKind.TRAILHEAD })))
+        assertEquals(fresh.camp.plot.objects.toSet(), WorldMap.upgrade(before).camp.plot.objects.toSet())
+    }
+
+    @Test
     fun `upgrading twice changes nothing`() {
         val once = WorldMap.upgrade(oldWorld())
         assertEquals(once, WorldMap.upgrade(once))

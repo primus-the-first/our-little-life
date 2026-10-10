@@ -16,6 +16,7 @@ enum class Mode(val label: String) {
 @Serializable
 enum class Activity(val label: String) {
     STARGAZING("Stargazing"),
+    WALK_INVITE("Hoping for a walk"),
 }
 
 /** One person in a world: their character, where they stand, what they're doing, and when they went to bed (epoch millis). */

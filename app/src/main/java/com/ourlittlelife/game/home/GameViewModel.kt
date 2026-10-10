@@ -9,6 +9,7 @@ import androidx.lifecycle.viewModelScope
 import com.ourlittlelife.game.data.WorldSource
 import com.ourlittlelife.game.day.describeShortfall
 import com.ourlittlelife.rules.Action
+import com.ourlittlelife.rules.Activity
 import com.ourlittlelife.rules.ActionResult
 import com.ourlittlelife.rules.BuildResult
 import com.ourlittlelife.rules.Building
@@ -28,6 +29,7 @@ import com.ourlittlelife.rules.RoomActions
 import com.ourlittlelife.rules.RoomKind
 import com.ourlittlelife.rules.UseResult
 import com.ourlittlelife.rules.Walking
+import com.ourlittlelife.rules.Walks
 import com.ourlittlelife.rules.World
 import com.ourlittlelife.rules.Worlds
 import java.util.concurrent.atomic.AtomicBoolean
@@ -107,6 +109,16 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     /** Social that closing the sky would add right now: more with company, most if they're stargazing too. */
     fun stargazeSocialPreview(): Int = world?.let { Together.socialBonus(it, it.player(myId).copy(tileX = characterTile.first, tileY = characterTile.second)) } ?: 0
 
+    /** True while walking the forest loop; the map follows you round it. */
+    var touring by mutableStateOf(false)
+        private set
+
+    /** Your partner, if they've asked you for a walk and are waiting for an answer. */
+    val walkInviteFrom: Player? get() = world?.takeIf { ready }?.let { Walks.waitingInvite(it, myId) }
+
+    /** True while you've asked your partner for a walk and they haven't answered. */
+    val askedForWalk: Boolean get() = ready && me.activity == Activity.WALK_INVITE
+
     private var clearedStaleActivity = false
 
     private var walkJob: Job? = null
@@ -126,9 +138,19 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun onWorld(next: World) {
-        val previousDay = world?.takeIf { ready }?.player(myId)?.character?.clock?.day
+        val before = world?.takeIf { ready }?.player(myId)
+        val previousDay = before?.character?.clock?.day
         world = next
         if (!ready) return
+
+        // Your partner said yes to your walk: play it here too, with them leading.
+        val now = me
+        if (before?.activity == Activity.WALK_INVITE && now.activity == null && now.tile == Walks.BEHIND_END &&
+            now.character.clock.minute > before.character.clock.minute
+        ) {
+            message = "${partnerName ?: "Your friend"} said yes. A walk round the forest: +12 fun, +${Walks.TOGETHER_SOCIAL} social."
+            tour(withPartner = true, iLead = false, from = before.tile)
+        }
 
         if (walkJob?.isActive != true) characterTile = me.tile
 
@@ -138,7 +160,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             if (me.activity != null && !stargazing) commit { w -> w.withPlayer(w.player(myId).copy(activity = null)) }
         }
         val other = partner
-        if (other == null) partnerTile = null else showPartnerAt(other.tile)
+        if (other == null) partnerTile = null else if (!touring) showPartnerAt(other.tile)
 
         val day = me.character.clock.day
         if (previousDay != null && day > previousDay) {
@@ -146,8 +168,8 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         }
 
         // If one of you has been waiting more than a day for the other, autopilot covers the missing day.
-        val now = System.currentTimeMillis()
-        if (Worlds.autopilot(next, now) != next) commit { Worlds.autopilot(it, now) }
+        val clockNow = System.currentTimeMillis()
+        if (Worlds.autopilot(next, clockNow) != next) commit { Worlds.autopilot(it, clockNow) }
     }
 
     /** Plays the partner's move as a walk along the route they'd have taken. */
@@ -224,6 +246,17 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /** Why you can't ask for a walk right now, or null if you can. */
+    fun walkProblem(): String? {
+        val other = partner ?: return "Nobody to walk with yet"
+        return when {
+            character.asleep -> "You're asleep"
+            other.character.asleep -> "${other.character.name} is asleep"
+            character.clock.minutesLeft < Walks.together.minutes -> "Not enough time left today"
+            else -> null
+        }
+    }
+
     fun dismissSelection() {
         selection = null
     }
@@ -261,6 +294,10 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 if (action == StarterActions.stargaze) {
                     walkTo(spot, saveOnArrival = false) { startStargazing(spot) }
+                    return
+                }
+                if (action == Walks.alone) {
+                    walkAlone(obj)
                     return
                 }
                 walkTo(spot, saveOnArrival = false) {
@@ -355,6 +392,88 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                 else -> "What a sky. +20 fun."
             }
         }) { w -> Together.stargaze(w, myId) }
+    }
+
+    /** Asks your partner for a walk. They see the invite on their map. */
+    fun askForWalk() {
+        selection = null
+        val name = partnerName ?: return
+        if (character.clock.minutesLeft < Walks.together.minutes) {
+            message = "Not enough time left today for a walk."
+            return
+        }
+        message = "You asked $name for a walk. They'll see it on their map."
+        commit(onSaved = { applied -> if (!applied) message = "$name can't walk right now." }) { w -> Walks.invite(w, myId) }
+    }
+
+    /** "Not now" to their invite, or calling off your own. */
+    fun declineWalk() {
+        commit { w -> Walks.decline(w, myId).takeIf { it != w } }
+    }
+
+    /** Saying yes: you both head round the forest loop, you in front. */
+    fun acceptWalk() {
+        val local = world ?: return
+        if (Walks.accept(local, myId) == null) {
+            message = "One of you doesn't have an hour left today. Maybe tomorrow."
+            return
+        }
+        val from = characterTile
+        val name = partnerName ?: "your friend"
+        commit(onSaved = { applied -> if (!applied) message = "That walk isn't on any more." }) { w -> Walks.accept(w, myId) }
+        message = "Off round the forest with $name. +12 fun, +${Walks.TOGETHER_SOCIAL} social."
+        tour(withPartner = true, iLead = true, from = from)
+    }
+
+    /** From the trailhead sign: round the loop on your own, then the hour is spent. */
+    private fun walkAlone(sign: PlotObject) {
+        tour(withPartner = false, iLead = true, from = characterTile) {
+            commit(onSaved = { applied -> message = if (applied) "A quiet walk in the forest. +12 fun." else "Not enough time left today for a walk." }) { w ->
+                val p = w.player(myId)
+                when (val fresh = w.camp.use(p.character, sign, Walks.alone)) {
+                    is UseResult.Done -> w.copy(camp = fresh.camp)
+                        .withPlayer(p.copy(character = fresh.character, tileX = Walks.END.first, tileY = Walks.END.second))
+                    else -> null
+                }
+            }
+        }
+    }
+
+    /**
+     * Plays a walk round the forest loop, ending back at the trailhead. With a partner, the
+     * leader goes first and the other follows a step behind; both start from where they stand.
+     */
+    private fun tour(withPartner: Boolean, iLead: Boolean, from: Pair<Int, Int>, onDone: () -> Unit = {}) {
+        val partnerFrom = partnerTile ?: from
+        val leaderFrom = if (iLead) from else partnerFrom
+        val followerFrom = if (iLead) partnerFrom else from
+        val start = Walks.trail.first()
+        val leader = (Walking.path(plot, leaderFrom, start) ?: listOf(start)) +
+            Walks.trail.drop(1) + start + (Walking.path(plot, start, Walks.END) ?: listOf(Walks.END))
+        val follower = (Walking.path(plot, followerFrom, leaderFrom) ?: emptyList()) + leaderFrom + leader.dropLast(1)
+        // Line the two routes up at the end, so whoever is closer waits at the start for the other.
+        val steps = if (withPartner) maxOf(leader.size, follower.size) else leader.size
+        fun at(route: List<Pair<Int, Int>>, origin: Pair<Int, Int>, i: Int) = route.getOrNull(i - (steps - route.size)) ?: origin
+
+        walkJob?.cancel()
+        partnerJob?.cancel()
+        touring = true
+        walkJob = viewModelScope.launch {
+            try {
+                for (i in 0 until steps) {
+                    characterTile = at(if (iLead) leader else follower, from, i)
+                    if (withPartner) partnerTile = at(if (iLead) follower else leader, partnerFrom, i)
+                    delay(WALK_STEP_MILLIS)
+                }
+            } finally {
+                touring = false
+            }
+            if (ready) {
+                characterTile = if (withPartner) me.tile else Walks.END
+                partner?.let { showPartnerAt(it.tile) }
+            }
+            onDone()
+        }
     }
 
     fun clearMessage() {

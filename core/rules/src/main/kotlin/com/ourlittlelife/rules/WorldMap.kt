@@ -86,11 +86,22 @@ object WorldMap {
 
     /** Worlds saved before the map grew move into the yard: the plot, its rooms, and everyone standing on it. */
     fun upgrade(world: World): World {
-        if (world.camp.plot.surroundings) return world
+        if (world.camp.plot.surroundings) return topUp(world)
         return world.copy(
             camp = world.camp.copy(plot = expand(world.camp.plot)),
             players = world.players.mapValues { (_, p) -> p.copy(tileX = p.tileX + YARD.x, tileY = p.tileY + YARD.y) },
         )
+    }
+
+    /** Adds anything new out in the world since this one was saved, wherever its spot is still free. */
+    private fun topUp(world: World): World {
+        val plot = world.camp.plot
+        val ids = plot.objects.map { it.id }.toSet()
+        val missing = wildObjects().filter { obj ->
+            obj.id !in ids && obj.tiles().all { (x, y) -> plot.objectAt(x, y) == null && world.players.values.none { it.tile == x to y } }
+        }
+        if (missing.isEmpty()) return world
+        return world.copy(camp = world.camp.copy(plot = plot.copy(objects = plot.objects + missing)))
     }
 
     /** Everything outside the yard. Fixed positions, so every world's surroundings match. */
@@ -115,6 +126,7 @@ object WorldMap {
 
         place(ObjectKind.BENCH, 31, 6)
         place(ObjectKind.RACE_SIGN, 46, 30)
+        place(ObjectKind.TRAILHEAD, 32, 45)
 
         // The forest around the trail, in loose rows with gaps to walk between.
         for (x in 2..42 step 3) for (y in 46..62 step 3) place(ObjectKind.TREE, x + (x * 7 + y * 3) % 2, y)

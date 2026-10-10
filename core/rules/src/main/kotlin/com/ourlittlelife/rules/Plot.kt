@@ -15,6 +15,7 @@ enum class ObjectKind(val label: String, val width: Int = 1, val height: Int = 1
     BUSH("Berry bush"),
     BENCH("Bench on the hill"),
     RACE_SIGN("Racecourse"),
+    TRAILHEAD("Forest trail"),
 }
 
 @Serializable
@@ -91,6 +92,7 @@ object ObjectActions {
         ObjectKind.BUSH -> listOf(Gathering.pickFiber)
         ObjectKind.WORKBENCH -> listOf(Refining.sawPlanks, Refining.fireBricks, Refining.weaveCloth)
         ObjectKind.BENCH -> listOf(StarterActions.stargaze, Outdoors.sit)
+        ObjectKind.TRAILHEAD -> listOf(Walks.alone)
         // The chest just shows what's stored; the racecourse isn't open yet.
         ObjectKind.CHEST, ObjectKind.RACE_SIGN -> emptyList()
     }

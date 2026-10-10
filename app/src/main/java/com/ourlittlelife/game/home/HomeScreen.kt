@@ -56,6 +56,7 @@ import com.ourlittlelife.rules.Building
 import com.ourlittlelife.rules.Clock
 import com.ourlittlelife.rules.Gathering
 import com.ourlittlelife.rules.Placement
+import com.ourlittlelife.rules.Walks
 import com.ourlittlelife.rules.Room
 import com.ourlittlelife.rules.RoomKind
 import com.ourlittlelife.rules.Need
@@ -205,7 +206,8 @@ private fun MapArea(viewModel: GameViewModel, focus: Pair<Int, Int>, modifier: M
             ),
             selected = selectedArea,
             ghost = ghost,
-            focusTile = focus,
+            focusTile = if (viewModel.touring) viewModel.characterTile else focus,
+            follow = viewModel.touring,
             showYard = viewModel.buildMode,
             onTapTile = viewModel::tapTile,
             modifier = Modifier.fillMaxSize(),
@@ -219,7 +221,22 @@ private fun MapArea(viewModel: GameViewModel, focus: Pair<Int, Int>, modifier: M
             lowNeed -> "${lowest.label} is low. Tap something nearby that helps."
             else -> null
         }
-        if (note != null) {
+        val inviter = viewModel.walkInviteFrom
+        if (inviter != null && !viewModel.touring) {
+            WalkCard(
+                text = "${inviter.character.name} wants to go for a walk in the forest.",
+                yes = "Go for a walk" to viewModel::acceptWalk,
+                no = "Not now" to viewModel::declineWalk,
+                modifier = Modifier.align(Alignment.TopCenter).padding(12.dp),
+            )
+        } else if (viewModel.askedForWalk && viewModel.message == null) {
+            WalkCard(
+                text = "Waiting for ${viewModel.partnerName ?: "your friend"} to say yes to a walk.",
+                yes = null,
+                no = "Call it off" to viewModel::declineWalk,
+                modifier = Modifier.align(Alignment.TopCenter).padding(12.dp),
+            )
+        } else if (note != null) {
             Notice(
                 text = note,
                 low = viewModel.message == null && !viewModel.buildMode && lowNeed,
@@ -391,6 +408,26 @@ private fun Notice(text: String, low: Boolean, modifier: Modifier = Modifier) {
             Text("LOW", style = OllType.tag, color = colors.berry)
         }
         Text(text, style = OllType.body, color = colors.ink)
+    }
+}
+
+/** A walk invite on the map: what's being asked, and the answers. */
+@Composable
+private fun WalkCard(text: String, yes: Pair<String, () -> Unit>?, no: Pair<String, () -> Unit>, modifier: Modifier = Modifier) {
+    val colors = OllTheme.colors
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(colors.surfaceRaised)
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Text(text, style = OllType.body, color = colors.ink)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            yes?.let { (label, onClick) -> SecondaryButton(text = label, onClick = onClick, modifier = Modifier.weight(1f)) }
+            SecondaryButton(text = no.first, onClick = no.second, modifier = if (yes != null) Modifier.weight(1f) else Modifier)
+        }
     }
 }
 
@@ -639,6 +676,30 @@ private fun PersonSheet(playerId: String, viewModel: GameViewModel) {
             Text("Needs", style = OllType.heading, color = colors.ink, modifier = Modifier.semantics { heading() })
             Need.entries.forEach { need -> NeedBar(label = need.label, value = person.needs[need]) }
             Text("Skills arrive with careers.", style = OllType.caption, color = colors.inkMuted)
+
+            if (!isMe) {
+                val problem = viewModel.walkProblem()
+                when {
+                    viewModel.walkInviteFrom?.id == playerId -> PrimaryButton(
+                        text = "Go for a walk",
+                        detail = "1h · +12 Fun · +${Walks.TOGETHER_SOCIAL} Social",
+                        onClick = { viewModel.dismissSelection(); viewModel.acceptWalk() },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    viewModel.askedForWalk -> SecondaryButton(
+                        text = "Call off the walk",
+                        onClick = { viewModel.dismissSelection(); viewModel.declineWalk() },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    else -> PrimaryButton(
+                        text = "Ask ${person.name} for a walk",
+                        detail = problem ?: "1h · +12 Fun · +${Walks.TOGETHER_SOCIAL} Social",
+                        enabled = problem == null,
+                        onClick = viewModel::askForWalk,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            }
         }
     }
 }
