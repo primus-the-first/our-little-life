@@ -17,7 +17,13 @@ enum class RoomKind(val label: String, val width: Int, val height: Int, val cost
 }
 
 @Serializable
-data class Room(val id: String, val kind: RoomKind, val x: Int, val y: Int) {
+data class Room(
+    val id: String,
+    val kind: RoomKind,
+    val x: Int,
+    val y: Int,
+    val furniture: List<Furniture> = Interiors.starterFurniture(kind),
+) {
 
     fun covers(tileX: Int, tileY: Int): Boolean =
         tileX in x until x + kind.width && tileY in y until y + kind.height

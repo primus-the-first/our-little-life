@@ -70,6 +70,7 @@ enum class Resource(val label: String, val refined: Boolean = false) {
     PLANKS("Planks", refined = true),
     BRICKS("Bricks", refined = true),
     CLOTH("Cloth", refined = true),
+    COINS("Coins"),
 }
 
 /** The shared storage chest: how much of each resource the pair has. */

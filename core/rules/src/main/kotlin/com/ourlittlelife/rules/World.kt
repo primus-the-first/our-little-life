@@ -28,6 +28,7 @@ data class Player(
     val tileY: Int,
     val sleptAt: Long? = null,
     val activity: Activity? = null,
+    val inside: Inside? = null,
 ) {
     val tile: Pair<Int, Int> get() = tileX to tileY
 }

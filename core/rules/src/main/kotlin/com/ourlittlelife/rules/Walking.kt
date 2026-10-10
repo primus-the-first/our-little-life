@@ -24,10 +24,13 @@ object Walking {
         from: Pair<Int, Int>,
         to: Pair<Int, Int>,
         occupied: Set<Pair<Int, Int>> = emptySet(),
-    ): List<Pair<Int, Int>>? {
+    ): List<Pair<Int, Int>>? = path(from, to) { isWalkable(plot, it, occupied) }
+
+    /** The shortest route on any grid where [isFree] says which tiles can be stood on. */
+    fun path(from: Pair<Int, Int>, to: Pair<Int, Int>, isFree: (Pair<Int, Int>) -> Boolean): List<Pair<Int, Int>>? {
         if (from == to) return emptyList()
-        if (!isWalkable(plot, to, occupied)) return null
-        val cameFrom = explore(plot, from, occupied) { it == to } ?: return null
+        if (!isFree(to)) return null
+        val cameFrom = explore(from, isFree) { it == to } ?: return null
         return routeTo(to, from, cameFrom)
     }
 
@@ -37,16 +40,19 @@ object Walking {
         obj: PlotObject,
         from: Pair<Int, Int>,
         occupied: Set<Pair<Int, Int>> = emptySet(),
-    ): Pair<Int, Int>? {
-        val footprint = obj.tiles().toSet()
-        val beside = footprint
+    ): Pair<Int, Int>? = spotBeside(obj.tiles(), from) { isWalkable(plot, it, occupied) }
+
+    /** The free tile next to [footprint] that's quickest to reach from [from], on any grid. */
+    fun spotBeside(footprint: List<Pair<Int, Int>>, from: Pair<Int, Int>, isFree: (Pair<Int, Int>) -> Boolean): Pair<Int, Int>? {
+        val taken = footprint.toSet()
+        val beside = taken
             .flatMap { (x, y) -> directions.map { (dx, dy) -> x + dx to y + dy } }
-            .filter { it !in footprint && isWalkable(plot, it, occupied) }
+            .filter { it !in taken && isFree(it) }
             .toSet()
         if (from in beside) return from
 
         var found: Pair<Int, Int>? = null
-        explore(plot, from, occupied) { tile -> (tile in beside).also { if (it) found = tile } }
+        explore(from, isFree) { tile -> (tile in beside).also { if (it) found = tile } }
         return found
     }
 
@@ -55,9 +61,8 @@ object Walking {
      * Returns how each tile was reached, or null if no goal was found.
      */
     private fun explore(
-        plot: Plot,
         start: Pair<Int, Int>,
-        occupied: Set<Pair<Int, Int>>,
+        isFree: (Pair<Int, Int>) -> Boolean,
         isGoal: (Pair<Int, Int>) -> Boolean,
     ): Map<Pair<Int, Int>, Pair<Int, Int>>? {
         val cameFrom = mutableMapOf<Pair<Int, Int>, Pair<Int, Int>>()
@@ -67,7 +72,7 @@ object Walking {
             val (x, y) = queue.removeFirst()
             for ((dx, dy) in directions) {
                 val next = x + dx to y + dy
-                if (next in seen || !isWalkable(plot, next, occupied)) continue
+                if (next in seen || !isFree(next)) continue
                 seen += next
                 cameFrom[next] = x to y
                 if (isGoal(next)) return cameFrom

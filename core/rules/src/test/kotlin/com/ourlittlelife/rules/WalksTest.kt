@@ -75,6 +75,13 @@ class WalksTest {
     }
 
     @Test
+    fun `a walk takes you both out of the house`() {
+        val indoors = world.players.values.fold(world) { w, p -> w.withPlayer(p.copy(inside = Inside("cabin", 3, 3))) }
+        val walked = assertNotNull(Walks.accept(assertNotNull(Walks.invite(indoors, "jo")), "maya"))
+        assertTrue(walked.players.values.all { it.inside == null })
+    }
+
+    @Test
     fun `not now, or cancelling, clears the invite`() {
         val asked = assertNotNull(Walks.invite(world, "jo"))
         assertNull(Walks.decline(asked, "maya").player("jo").activity)

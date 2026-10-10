@@ -55,6 +55,7 @@ import com.ourlittlelife.game.BuildConfig
 import com.ourlittlelife.rules.Building
 import com.ourlittlelife.rules.Clock
 import com.ourlittlelife.rules.Gathering
+import com.ourlittlelife.rules.FurnitureKind
 import com.ourlittlelife.rules.Placement
 import com.ourlittlelife.rules.Walks
 import com.ourlittlelife.rules.Room
@@ -150,6 +151,7 @@ fun HomeScreen(viewModel: GameViewModel = viewModel(), onBackToLobby: () -> Unit
         is Selection.InRoom -> RoomSheet(selection.room, viewModel, character.asleep)
         is Selection.Ground -> GroundSheet(selection, viewModel, character.asleep)
         is Selection.Person -> PersonSheet(selection.playerId, viewModel)
+        is Selection.Piece -> PieceSheet(selection, viewModel, character.asleep)
         null -> Unit
     }
 
@@ -183,7 +185,7 @@ private fun MapArea(viewModel: GameViewModel, focus: Pair<Int, Int>, modifier: M
         val selectedArea = when (selection) {
             is Selection.Thing -> selection.obj.let { TileArea(it.x, it.y, it.kind.width, it.kind.height) }
             is Selection.InRoom -> selection.room.let { TileArea(it.x, it.y, it.kind.width, it.kind.height) }
-            is Selection.Person, is Selection.Ground, null -> null
+            is Selection.Person, is Selection.Ground, is Selection.Piece, null -> null
         }
         // On empty ground, preview the first room on offer right where you tapped.
         val ghost = (selection as? Selection.Ground)?.let { ground ->
@@ -194,29 +196,47 @@ private fun MapArea(viewModel: GameViewModel, focus: Pair<Int, Int>, modifier: M
                 )
             }
         }
-        PlotCanvas(
-            plot = viewModel.plot,
-            characters = listOfNotNull(
-                PlacedCharacter(character.name, viewModel.myOutfit, viewModel.characterTile.first, viewModel.characterTile.second, colors.peach),
-                viewModel.partner?.let { other ->
-                    viewModel.partnerTile?.let { (x, y) ->
-                        PlacedCharacter(other.character.name, viewModel.outfitFor(other.id), x, y, colors.sky)
-                    }
-                },
-            ),
-            selected = selectedArea,
-            ghost = ghost,
-            focusTile = if (viewModel.touring) viewModel.characterTile else focus,
-            follow = viewModel.touring,
-            showYard = viewModel.buildMode,
-            onTapTile = viewModel::tapTile,
-            modifier = Modifier.fillMaxSize(),
-        )
+        val room = viewModel.insideRoom
+        if (room != null) {
+            RoomCanvas(
+                room = room,
+                characters = listOfNotNull(
+                    PlacedCharacter(character.name, viewModel.myOutfit, viewModel.insideTile.first, viewModel.insideTile.second, colors.peach),
+                    viewModel.partnerInHere?.let { other ->
+                        other.inside?.let { PlacedCharacter(other.character.name, viewModel.outfitFor(other.id), it.x, it.y, colors.sky) }
+                    },
+                ),
+                selected = (selection as? Selection.Piece)?.piece,
+                onTapTile = viewModel::tapInside,
+                modifier = Modifier.fillMaxSize(),
+            )
+        } else {
+            PlotCanvas(
+                plot = viewModel.plot,
+                characters = listOfNotNull(
+                    PlacedCharacter(character.name, viewModel.myOutfit, viewModel.characterTile.first, viewModel.characterTile.second, colors.peach),
+                    // Someone indoors isn't drawn on the map; their line at the top says where they are.
+                    viewModel.partner?.takeIf { it.inside == null }?.let { other ->
+                        viewModel.partnerTile?.let { (x, y) ->
+                            PlacedCharacter(other.character.name, viewModel.outfitFor(other.id), x, y, colors.sky)
+                        }
+                    },
+                ),
+                selected = selectedArea,
+                ghost = ghost,
+                focusTile = if (viewModel.touring) viewModel.characterTile else focus,
+                follow = viewModel.touring,
+                showYard = viewModel.buildMode,
+                onTapTile = viewModel::tapTile,
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
 
         val lowest = Need.entries.minBy { character.needs[it] }
         val lowNeed = character.needs[lowest] < 30
         val note = when {
             viewModel.message != null -> viewModel.message
+            room != null -> null
             viewModel.buildMode -> "Build mode: tap open ground to place a room."
             lowNeed -> "${lowest.label} is low. Tap something nearby that helps."
             else -> null
@@ -247,14 +267,36 @@ private fun MapArea(viewModel: GameViewModel, focus: Pair<Int, Int>, modifier: M
             )
         }
 
-        // A tap on grass normally walks there; build mode turns it into "place a room here".
-        SecondaryButton(
-            text = if (viewModel.buildMode) "Done building" else "Build",
-            onClick = viewModel::toggleBuildMode,
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(12.dp),
-        )
+        if (room != null) {
+            Text(
+                room.kind.label,
+                style = OllType.heading,
+                color = colors.ink,
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(12.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(colors.surfaceRaised)
+                    .padding(horizontal = 10.dp, vertical = 6.dp)
+                    .semantics { heading() },
+            )
+            SecondaryButton(
+                text = "Head outside",
+                onClick = viewModel::goOutside,
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(12.dp),
+            )
+        } else {
+            // A tap on grass normally walks there; build mode turns it into "place a room here".
+            SecondaryButton(
+                text = if (viewModel.buildMode) "Done building" else "Build",
+                onClick = viewModel::toggleBuildMode,
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(12.dp),
+            )
+        }
     }
 }
 
@@ -350,6 +392,7 @@ private fun PartnerLine(viewModel: GameViewModel, modifier: Modifier = Modifier)
         viewModel.isSolo -> "Playing solo · saved on this phone"
         partner == null -> "Waiting for a friend · code ${viewModel.worldCode}"
         partner.character.asleep -> "${partner.character.name} is asleep"
+        partner.inside != null -> "${partner.character.name} is in the ${viewModel.plot.rooms.firstOrNull { it.id == partner.inside?.roomId }?.kind?.label?.lowercase() ?: "house"}"
         else -> "${partner.character.name} is up · ${formatTime(partner.character.clock.minute)}"
     }
     Row(
@@ -482,6 +525,39 @@ private fun ObjectSheet(obj: PlotObject, viewModel: GameViewModel, asleep: Boole
     }
 }
 
+/** A piece of furniture inside a room: what it offers. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun PieceSheet(selection: Selection.Piece, viewModel: GameViewModel, asleep: Boolean) {
+    val colors = OllTheme.colors
+    val piece = selection.piece
+    ModalBottomSheet(
+        onDismissRequest = viewModel::dismissSelection,
+        containerColor = colors.surfaceRaised,
+        contentColor = colors.ink,
+    ) {
+        Column(
+            modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 32.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(piece.kind.label, style = OllType.title, color = colors.ink, modifier = Modifier.semantics { heading() })
+            if (asleep) {
+                Text("Everyone's asleep. Start the next day first.", style = OllType.body, color = colors.inkMuted)
+            } else {
+                if (piece.kind == FurnitureKind.BED) SleepHereButton(viewModel)
+                viewModel.actionsFor(piece).forEach { action ->
+                    SecondaryButton(
+                        text = action.name,
+                        detail = describe(action),
+                        onClick = { viewModel.perform(selection.room, piece, action) },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            }
+        }
+    }
+}
+
 /** Going to bed for the night from the bed itself, same as the "Go to bed" button. */
 @Composable
 private fun SleepHereButton(viewModel: GameViewModel) {
@@ -518,6 +594,12 @@ private fun RoomSheet(room: Room, viewModel: GameViewModel, asleep: Boolean) {
             if (asleep) {
                 Text("Everyone's asleep. Start the next day first.", style = OllType.body, color = colors.inkMuted)
             } else {
+                SecondaryButton(
+                    text = "Go inside",
+                    detail = "See the room",
+                    onClick = { viewModel.goInside(room) },
+                    modifier = Modifier.fillMaxWidth(),
+                )
                 if (room.kind == RoomKind.CABIN) SleepHereButton(viewModel)
                 viewModel.actionsFor(room).forEach { action ->
                     SecondaryButton(

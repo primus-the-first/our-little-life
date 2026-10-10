@@ -88,6 +88,16 @@ data class Camp(
         }
     }
 
+    /** Uses a piece of furniture inside a room, such as the cabin's bed. */
+    fun useFurniture(character: Character, room: Room, piece: Furniture, action: Action): UseResult {
+        require(piece in room.furniture) { "${piece.kind.label} isn't in the ${room.kind.label}" }
+        require(action in FurnitureActions.forKind(piece.kind)) { "${piece.kind.label} doesn't offer ${action.name}" }
+        return when (val result = Rules.perform(character, action)) {
+            is ActionResult.Done -> UseResult.Done(result.character, this)
+            else -> UseResult.Refused(result)
+        }
+    }
+
     /** Uses something a room offers, such as the cabin's bed. */
     fun useRoom(character: Character, room: Room, action: Action): UseResult {
         require(action in RoomActions.forKind(room.kind)) { "${room.kind.label} doesn't offer ${action.name}" }

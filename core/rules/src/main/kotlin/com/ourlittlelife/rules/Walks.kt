@@ -50,7 +50,7 @@ object Walks {
 
     /**
      * Saying yes: an hour round the loop for both of you, ending back at the trailhead.
-     * Null if there's no invite, or either of you can't spare the hour.
+     * Null if there's no invite, or either of you is asleep. Anyone indoors comes out for it.
      */
     fun accept(world: World, by: String): World? {
         val inviter = waitingInvite(world, by) ?: return null
@@ -58,7 +58,7 @@ object Walks {
         val mine = Rules.perform(me.character, together) as? ActionResult.Done ?: return null
         val theirs = Rules.perform(inviter.character, together) as? ActionResult.Done ?: return null
         return world
-            .withPlayer(me.copy(character = mine.character, tileX = END.first, tileY = END.second, activity = null))
-            .withPlayer(inviter.copy(character = theirs.character, tileX = BEHIND_END.first, tileY = BEHIND_END.second, activity = null))
+            .withPlayer(me.copy(character = mine.character, tileX = END.first, tileY = END.second, activity = null, inside = null))
+            .withPlayer(inviter.copy(character = theirs.character, tileX = BEHIND_END.first, tileY = BEHIND_END.second, activity = null, inside = null))
     }
 }

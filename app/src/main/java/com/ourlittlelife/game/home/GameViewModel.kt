@@ -15,6 +15,9 @@ import com.ourlittlelife.rules.BuildResult
 import com.ourlittlelife.rules.Building
 import com.ourlittlelife.rules.Camp
 import com.ourlittlelife.rules.Character
+import com.ourlittlelife.rules.Furniture
+import com.ourlittlelife.rules.FurnitureActions
+import com.ourlittlelife.rules.Interiors
 import com.ourlittlelife.rules.ObjectActions
 import com.ourlittlelife.rules.Placement
 import com.ourlittlelife.rules.Player
@@ -44,6 +47,7 @@ sealed interface Selection {
     data class InRoom(val room: Room) : Selection
     data class Ground(val x: Int, val y: Int) : Selection
     data class Person(val playerId: String) : Selection
+    data class Piece(val room: Room, val piece: Furniture) : Selection
 }
 
 /**
@@ -109,6 +113,16 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     /** Social that closing the sky would add right now: more with company, most if they're stargazing too. */
     fun stargazeSocialPreview(): Int = world?.let { Together.socialBonus(it, it.player(myId).copy(tileX = characterTile.first, tileY = characterTile.second)) } ?: 0
 
+    /** The room you're inside, or null when you're outdoors. */
+    val insideRoom: Room? get() = world?.takeIf { ready }?.let { w -> me.inside?.let { inside -> w.camp.plot.rooms.firstOrNull { it.id == inside.roomId } } }
+
+    /** Where you're drawn inside the room. Runs ahead of the saved spot while walking. */
+    var insideTile by mutableStateOf(0 to 0)
+        private set
+
+    /** Your partner, if they're inside the same room as you. */
+    val partnerInHere: Player? get() = partner?.takeIf { it.inside != null && it.inside?.roomId == me.inside?.roomId }
+
     /** True while walking the forest loop; the map follows you round it. */
     var touring by mutableStateOf(false)
         private set
@@ -152,7 +166,10 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             tour(withPartner = true, iLead = false, from = before.tile)
         }
 
-        if (walkJob?.isActive != true) characterTile = me.tile
+        if (walkJob?.isActive != true) {
+            characterTile = me.tile
+            me.inside?.let { insideTile = it.tile }
+        }
 
         // An activity left over from closing the app mid-moment is cleared once, so the partner isn't misled.
         if (!clearedStaleActivity) {
@@ -256,6 +273,77 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /** Steps inside a room you've built. */
+    fun goInside(room: Room) {
+        selection = null
+        if (character.asleep) return
+        walkJob?.cancel()
+        insideTile = Interiors.door(room.kind)
+        commit { w -> Interiors.enter(w, myId, room.id) }
+    }
+
+    /** Back out onto the doorstep. */
+    fun goOutside() {
+        selection = null
+        walkJob?.cancel()
+        val room = insideRoom ?: return
+        val step = Interiors.doorstep(room)
+        if (Walking.isWalkable(plot, step)) characterTile = step
+        commit { w -> Interiors.leave(w, myId) }
+    }
+
+    /** Taps inside: people open their card, furniture opens what it offers, the floor is walked to. */
+    fun tapInside(x: Int, y: Int) {
+        val room = insideRoom ?: return
+        val tapped = x to y
+        val piece = Interiors.furnitureAt(room, x, y)
+        when {
+            tapped == insideTile -> selection = Selection.Person(myId)
+            partnerInHere?.inside?.tile == tapped -> selection = Selection.Person(partner!!.id)
+            piece != null -> selection = Selection.Piece(room, piece)
+            !Interiors.isFree(room, tapped) -> Unit
+            character.asleep -> message = "You're asleep. The day starts when everyone has gone to bed."
+            else -> walkInside(room, tapped) { commit { w -> Interiors.moveTo(w, myId, tapped) } }
+        }
+    }
+
+    private fun walkInside(room: Room, target: Pair<Int, Int>, onArrival: () -> Unit) {
+        val occupied = setOfNotNull(partnerInHere?.inside?.tile)
+        val route = Interiors.path(room, insideTile, target, occupied) ?: return
+        walkJob?.cancel()
+        walkJob = viewModelScope.launch {
+            for (step in route) {
+                insideTile = step
+                delay(WALK_STEP_MILLIS)
+            }
+            onArrival()
+        }
+    }
+
+    fun actionsFor(piece: Furniture): List<Action> = FurnitureActions.forKind(piece.kind)
+
+    /** Walks over to the piece of furniture, then uses it. */
+    fun perform(room: Room, piece: Furniture, action: Action) {
+        selection = null
+        val check = camp.useFurniture(character, room, piece, action)
+        if (check is UseResult.Refused) {
+            message = refusal(check.reason)
+            return
+        }
+        val spot = Interiors.spotBeside(room, piece, insideTile, setOfNotNull(partnerInHere?.inside?.tile)) ?: insideTile
+        walkInside(room, spot) {
+            commit { w ->
+                val p = w.player(myId)
+                val current = w.camp.plot.rooms.firstOrNull { it.id == room.id } ?: return@commit null
+                val fresh = current.furniture.firstOrNull { it.id == piece.id } ?: return@commit null
+                when (val done = w.camp.useFurniture(p.character, current, fresh, action)) {
+                    is UseResult.Done -> Interiors.moveTo(w.copy(camp = done.camp).withPlayer(p.copy(character = done.character)), myId, spot)
+                    else -> null
+                }
+            }
+        }
+    }
+
     fun dismissSelection() {
         selection = null
     }
@@ -322,6 +410,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         val yielded = action.yields.entries.firstOrNull()
         message = when {
             !applied -> "${partnerName ?: "Someone"} got to the ${obj.kind.label.lowercase()} first."
+            yielded?.key == Resource.COINS -> "A day's work done. +${yielded.value} coins."
             yielded != null -> "+${yielded.value} ${yielded.key.label.lowercase()} in the chest."
             else -> null
         }

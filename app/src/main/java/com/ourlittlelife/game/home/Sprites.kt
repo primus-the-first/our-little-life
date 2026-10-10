@@ -2,6 +2,7 @@ package com.ourlittlelife.game.home
 
 import androidx.compose.ui.graphics.Color
 import com.ourlittlelife.rules.Area
+import com.ourlittlelife.rules.FurnitureKind
 import com.ourlittlelife.rules.ObjectKind
 import com.ourlittlelife.rules.Plot
 import com.ourlittlelife.rules.Terrain
@@ -25,6 +26,18 @@ object Sprites {
 
     /** Wooden walls around rooms: part of the world art, matched to the Kenney planks, not a UI colour. */
     val wallColor = Color(0xFF8A5A3C)
+
+    /** The threshold in the doorway, a shade lighter than the wall. */
+    val floorDoorway = Color(0xFFC08A5C)
+
+    fun forFurniture(kind: FurnitureKind): List<SpritePart> = when (kind) {
+        FurnitureKind.BED -> listOf(
+            SpritePart(0, 0, Sprite(Sheet.INDOOR, 14, 6)),
+            SpritePart(1, 0, Sprite(Sheet.INDOOR, 15, 6)),
+            SpritePart(0, 1, Sprite(Sheet.INDOOR, 14, 7)),
+            SpritePart(1, 1, Sprite(Sheet.INDOOR, 15, 7)),
+        )
+    }
 
     fun forKind(kind: ObjectKind): List<SpritePart> = when (kind) {
         ObjectKind.TENT -> listOf(
