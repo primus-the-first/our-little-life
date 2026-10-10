@@ -1,6 +1,12 @@
 package com.ourlittlelife.game.home
 
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateOffsetAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.runtime.key
+import kotlin.math.PI
+import kotlin.math.sin
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.runtime.Composable
@@ -70,6 +76,17 @@ fun PlotCanvas(
     val people = ImageBitmap.imageResource(R.drawable.sheet_characters)
     val textMeasurer = rememberTextMeasurer()
 
+    // Characters glide from tile to tile in exactly the time one step takes, so a walk is one smooth motion.
+    val glide = characters.map { person ->
+        key(person.name) {
+            animateOffsetAsState(
+                targetValue = Offset(person.x.toFloat(), person.y.toFloat()),
+                animationSpec = tween(durationMillis = WALK_STEP_MILLIS.toInt(), easing = LinearEasing),
+                label = "walk-${person.name}",
+            ).value
+        }
+    }
+
     // Zoom is measured in whole multiples of the 16 px source tile; start so a tile is a comfortable tap target.
     val density = LocalDensity.current
     val minScale = 3f
@@ -117,7 +134,8 @@ fun PlotCanvas(
             Sheet.CHARACTERS -> people
         }
 
-        fun DrawScope.sprite(sprite: Sprite, tx: Int, ty: Int) = drawImage(
+        // Positions may be between tiles (a character mid-step); the sprite itself is still scaled by a whole number.
+        fun DrawScope.spriteAt(sprite: Sprite, tx: Float, ty: Float) = drawImage(
             image = sheetFor(sprite),
             srcOffset = IntOffset(sprite.col * Sprites.STRIDE, sprite.row * Sprites.STRIDE),
             srcSize = IntSize(Sprites.TILE, Sprites.TILE),
@@ -125,6 +143,8 @@ fun PlotCanvas(
             dstSize = IntSize(tileInt, tileInt),
             filterQuality = FilterQuality.None,
         )
+
+        fun DrawScope.sprite(sprite: Sprite, tx: Int, ty: Int) = spriteAt(sprite, tx.toFloat(), ty.toFloat())
 
         drawRect(colors.surfaceSunken)
 
@@ -166,12 +186,16 @@ fun PlotCanvas(
             Sprites.forKind(obj.kind).forEach { part -> sprite(part.sprite, obj.x + part.dx, obj.y + part.dy) }
         }
 
-        characters.forEach { person ->
-            person.layers.forEach { layer -> sprite(layer, person.x, person.y) }
+        characters.forEachIndexed { i, person ->
+            val at = glide[i]
+            // A small hop in the middle of each step, so a glide reads as walking.
+            val stepProgress = (at.x - floor(at.x)) + (at.y - floor(at.y))
+            val hop = (sin(PI * stepProgress) * 0.08).toFloat()
+            person.layers.forEach { layer -> spriteAt(layer, at.x, at.y - hop) }
             val label = textMeasurer.measure(person.name, OllType.caption.copy(color = colors.onFill))
             val pad = 4.dp.toPx()
-            val tagLeft = origin.x + (person.x + 0.5f) * tile - label.size.width / 2f - pad
-            val tagTop = origin.y + (person.y + 1) * tile + 2.dp.toPx()
+            val tagLeft = origin.x + (at.x + 0.5f) * tile - label.size.width / 2f - pad
+            val tagTop = origin.y + (at.y + 1) * tile + 2.dp.toPx()
             drawRoundRect(
                 color = person.tag,
                 topLeft = Offset(tagLeft, tagTop),

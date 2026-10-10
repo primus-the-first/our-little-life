@@ -1,5 +1,7 @@
 package com.ourlittlelife.game.home
 
+import android.content.res.Configuration
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -8,7 +10,10 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -71,104 +76,65 @@ fun HomeScreen(viewModel: GameViewModel = viewModel()) {
         }
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(colors.surface)
-            .safeDrawingPadding(),
-    ) {
-        Hud(
-            clock = clock,
-            name = character.name,
-            mood = character.needs.mood,
-            onOpenNeeds = { needsOpen = true },
-            modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 8.dp),
-        )
+    // The map opens centred on wherever Jo is standing (also after the phone is turned).
+    val focus = remember { viewModel.characterTile }
+    val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
 
-        ResourceStrip(
-            storage = viewModel.camp.storage,
-            modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
-        )
-
-        Box(
+    if (landscape) {
+        // Landscape: the day, materials and bed button in a side panel; the map gets the rest.
+        Row(
             modifier = Modifier
-                .weight(1f)
-                .padding(horizontal = 16.dp)
-                .clip(RoundedCornerShape(20.dp)),
+                .fillMaxSize()
+                .background(colors.surface)
+                .safeDrawingPadding(),
         ) {
-            val selection = viewModel.selection
-            val selectedArea = when (selection) {
-                is Selection.Thing -> selection.obj.let { TileArea(it.x, it.y, it.kind.width, it.kind.height) }
-                is Selection.InRoom -> selection.room.let { TileArea(it.x, it.y, it.kind.width, it.kind.height) }
-                is Selection.Ground, null -> null
-            }
-            // On empty ground, preview the first room on offer right where you tapped.
-            val ghost = (selection as? Selection.Ground)?.let { ground ->
-                viewModel.buildOptions().firstOrNull()?.let { kind ->
-                    Ghost(
-                        area = TileArea(ground.x, ground.y, kind.width, kind.height),
-                        fits = viewModel.placement(kind, ground.x, ground.y) == Placement.Ok,
-                    )
-                }
-            }
-            PlotCanvas(
-                plot = viewModel.plot,
-                characters = listOf(
-                    PlacedCharacter(character.name, Sprites.jo, viewModel.characterTile.first, viewModel.characterTile.second, colors.peach),
-                    PlacedCharacter(viewModel.partnerName, Sprites.maya, viewModel.partnerTile.first, viewModel.partnerTile.second, colors.sky),
-                ),
-                selected = selectedArea,
-                ghost = ghost,
-                focusTile = 11 to 11,
-                onTapTile = viewModel::tapTile,
-                modifier = Modifier.fillMaxSize(),
-            )
-
-            val lowest = Need.entries.minBy { character.needs[it] }
-            val lowNeed = character.needs[lowest] < 30
-            val note = when {
-                viewModel.message != null -> viewModel.message
-                viewModel.buildMode -> "Build mode: tap open ground to place a room."
-                lowNeed -> "${lowest.label} is low. Tap something nearby that helps."
-                else -> null
-            }
-            if (note != null) {
-                Notice(
-                    text = note,
-                    low = viewModel.message == null && !viewModel.buildMode && lowNeed,
-                    modifier = Modifier
-                        .align(Alignment.TopCenter)
-                        .padding(12.dp)
-                        .clickable(onClick = viewModel::clearMessage),
-                )
-            }
-
-            // A tap on grass normally walks there; build mode turns it into "place a room here".
-            SecondaryButton(
-                text = if (viewModel.buildMode) "Done building" else "Build",
-                onClick = viewModel::toggleBuildMode,
+            Column(
                 modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(12.dp),
+                    .width(300.dp)
+                    .fillMaxHeight()
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Hud(clock, character.name, character.needs.mood, onOpenNeeds = { needsOpen = true }, stacked = true)
+                ResourceStrip(storage = viewModel.camp.storage)
+                Spacer(Modifier.weight(1f))
+                DayButton(viewModel)
+            }
+            MapArea(
+                viewModel = viewModel,
+                focus = focus,
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+                    .padding(top = 16.dp, end = 16.dp, bottom = 16.dp),
             )
         }
-
-        Box(Modifier.padding(16.dp)) {
-            if (character.asleep) {
-                PrimaryButton(
-                    text = "Start ${Clock.startOfDay(clock.day + 1).weekday}",
-                    detail = "${character.name} is asleep",
-                    onClick = viewModel::startNextDay,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            } else {
-                PrimaryButton(
-                    text = "Go to bed",
-                    detail = if (clock.minutesLeft > 0) "${formatDuration(clock.minutesLeft)} unused" else null,
-                    onClick = viewModel::sleep,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
+    } else {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(colors.surface)
+                .safeDrawingPadding(),
+        ) {
+            Hud(
+                clock = clock,
+                name = character.name,
+                mood = character.needs.mood,
+                onOpenNeeds = { needsOpen = true },
+                modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 8.dp),
+            )
+            ResourceStrip(
+                storage = viewModel.camp.storage,
+                modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
+            )
+            MapArea(
+                viewModel = viewModel,
+                focus = focus,
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = 16.dp),
+            )
+            Box(Modifier.padding(16.dp)) { DayButton(viewModel) }
         }
     }
 
@@ -184,45 +150,150 @@ fun HomeScreen(viewModel: GameViewModel = viewModel()) {
     }
 }
 
+/** The plot with its notices and the build toggle laid over it. */
 @Composable
-private fun Hud(clock: Clock, name: String, mood: Int, onOpenNeeds: () -> Unit, modifier: Modifier = Modifier) {
+private fun MapArea(viewModel: GameViewModel, focus: Pair<Int, Int>, modifier: Modifier = Modifier) {
     val colors = OllTheme.colors
-    Row(
-        modifier = modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.Top,
-    ) {
-        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(
-                "Day ${clock.day} · ${clock.weekday}",
-                style = OllType.title,
-                color = colors.ink,
-                modifier = Modifier.semantics { heading() },
-            )
-            Text(
-                "${formatTime(clock.minute)} · ${formatDuration(clock.minutesLeft)} left",
-                style = OllType.stat,
-                color = colors.inkMuted,
+    val character = viewModel.character
+    Box(modifier = modifier.clip(RoundedCornerShape(20.dp))) {
+        val selection = viewModel.selection
+        val selectedArea = when (selection) {
+            is Selection.Thing -> selection.obj.let { TileArea(it.x, it.y, it.kind.width, it.kind.height) }
+            is Selection.InRoom -> selection.room.let { TileArea(it.x, it.y, it.kind.width, it.kind.height) }
+            is Selection.Ground, null -> null
+        }
+        // On empty ground, preview the first room on offer right where you tapped.
+        val ghost = (selection as? Selection.Ground)?.let { ground ->
+            viewModel.buildOptions().firstOrNull()?.let { kind ->
+                Ghost(
+                    area = TileArea(ground.x, ground.y, kind.width, kind.height),
+                    fits = viewModel.placement(kind, ground.x, ground.y) == Placement.Ok,
+                )
+            }
+        }
+        PlotCanvas(
+            plot = viewModel.plot,
+            characters = listOf(
+                PlacedCharacter(character.name, Sprites.jo, viewModel.characterTile.first, viewModel.characterTile.second, colors.peach),
+                PlacedCharacter(viewModel.partnerName, Sprites.maya, viewModel.partnerTile.first, viewModel.partnerTile.second, colors.sky),
+            ),
+            selected = selectedArea,
+            ghost = ghost,
+            focusTile = focus,
+            onTapTile = viewModel::tapTile,
+            modifier = Modifier.fillMaxSize(),
+        )
+
+        val lowest = Need.entries.minBy { character.needs[it] }
+        val lowNeed = character.needs[lowest] < 30
+        val note = when {
+            viewModel.message != null -> viewModel.message
+            viewModel.buildMode -> "Build mode: tap open ground to place a room."
+            lowNeed -> "${lowest.label} is low. Tap something nearby that helps."
+            else -> null
+        }
+        if (note != null) {
+            Notice(
+                text = note,
+                low = viewModel.message == null && !viewModel.buildMode && lowNeed,
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(12.dp)
+                    .clickable(onClick = viewModel::clearMessage),
             )
         }
-        val word = moodWord(mood)
-        val chipColor = when (word) {
-            "Cheerful" -> colors.leaf
-            "Fine" -> colors.honey
-            else -> colors.surfaceSunken
-        }
-        Text(
-            "$name · $word",
-            style = OllType.button,
-            color = if (word == "Grumpy") colors.berry else colors.onFill,
+
+        // A tap on grass normally walks there; build mode turns it into "place a room here".
+        SecondaryButton(
+            text = if (viewModel.buildMode) "Done building" else "Build",
+            onClick = viewModel::toggleBuildMode,
             modifier = Modifier
-                .heightIn(min = 48.dp)
-                .clip(RoundedCornerShape(12.dp))
-                .background(chipColor)
-                .clickable(role = Role.Button, onClickLabel = "Show needs", onClick = onOpenNeeds)
-                .padding(horizontal = 14.dp, vertical = 14.dp),
+                .align(Alignment.BottomEnd)
+                .padding(12.dp),
         )
     }
+}
+
+/** The screen's one primary action: go to bed, or start the next day once asleep. */
+@Composable
+private fun DayButton(viewModel: GameViewModel) {
+    val character = viewModel.character
+    val clock = character.clock
+    if (character.asleep) {
+        PrimaryButton(
+            text = "Start ${Clock.startOfDay(clock.day + 1).weekday}",
+            detail = "${character.name} is asleep",
+            onClick = viewModel::startNextDay,
+            modifier = Modifier.fillMaxWidth(),
+        )
+    } else {
+        PrimaryButton(
+            text = "Go to bed",
+            detail = if (clock.minutesLeft > 0) "${formatDuration(clock.minutesLeft)} unused" else null,
+            onClick = viewModel::sleep,
+            modifier = Modifier.fillMaxWidth(),
+        )
+    }
+}
+
+/** The day, the clock and the mood chip. [stacked] puts the chip under the clock, for the narrow landscape panel. */
+@Composable
+private fun Hud(
+    clock: Clock,
+    name: String,
+    mood: Int,
+    onOpenNeeds: () -> Unit,
+    modifier: Modifier = Modifier,
+    stacked: Boolean = false,
+) {
+    if (stacked) {
+        Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            HudContent(clock, name, mood, onOpenNeeds)
+        }
+    } else {
+        Row(
+            modifier = modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.Top,
+        ) {
+            HudContent(clock, name, mood, onOpenNeeds)
+        }
+    }
+}
+
+@Composable
+private fun HudContent(clock: Clock, name: String, mood: Int, onOpenNeeds: () -> Unit) {
+    val colors = OllTheme.colors
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text(
+            "Day ${clock.day} · ${clock.weekday}",
+            style = OllType.title,
+            color = colors.ink,
+            modifier = Modifier.semantics { heading() },
+        )
+        Text(
+            "${formatTime(clock.minute)} · ${formatDuration(clock.minutesLeft)} left",
+            style = OllType.stat,
+            color = colors.inkMuted,
+        )
+    }
+    val word = moodWord(mood)
+    val chipColor = when (word) {
+        "Cheerful" -> colors.leaf
+        "Fine" -> colors.honey
+        else -> colors.surfaceSunken
+    }
+    Text(
+        "$name · $word",
+        style = OllType.button,
+        color = if (word == "Grumpy") colors.berry else colors.onFill,
+        modifier = Modifier
+            .heightIn(min = 48.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(chipColor)
+            .clickable(role = Role.Button, onClickLabel = "Show needs", onClick = onOpenNeeds)
+            .padding(horizontal = 14.dp, vertical = 14.dp),
+    )
 }
 
 /** What's in the shared chest, always in view. Refined materials appear once there are some. */

@@ -25,7 +25,7 @@ Kotlin, Jetpack Compose, Material 3. Firebase (Auth, Firestore, Storage, Cloud F
 - Screens use design-system tokens only: `OllTheme.colors.*` and `OllType.*`. No raw hex colours or ad-hoc text styles in screens.
 - One primary (peach) button per screen. Disabled buttons say what's missing.
 - Never show state with colour alone: low needs also say "Low".
-- Tap targets at least 48dp. Portrait only.
+- Tap targets at least 48dp. Portrait and landscape both work: in landscape the HUD moves to a side panel and the map fills the rest.
 - Copy is warm, short, sentence case, no emoji in the UI.
 - Game numbers (decay rates, costs, prices) are starting values; they move to `content/` JSON in Phase 4.
 - Never commit signing keys, `google-services.json`, or anything under `art/adult/`.

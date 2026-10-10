@@ -132,7 +132,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         walkJob = viewModelScope.launch {
             for (step in route) {
                 characterTile = step
-                delay(STEP_MILLIS)
+                delay(WALK_STEP_MILLIS)
             }
             persist()
             onArrival()
@@ -231,9 +231,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         is ActionResult.NotEnoughTime -> "Not enough time left today for that. Try something shorter, or go to bed."
         else -> "${character.name} is asleep."
     }
-
-    private companion object {
-        /** How long each step takes on screen. */
-        const val STEP_MILLIS = 140L
-    }
 }
+
+/** How long each step takes. The canvas glides a character across a tile in exactly this time. */
+const val WALK_STEP_MILLIS = 140L
