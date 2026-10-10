@@ -2,6 +2,7 @@ package com.ourlittlelife.game.session
 
 import android.app.Activity
 import android.app.Application
+import android.content.Context
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -15,17 +16,21 @@ import com.ourlittlelife.rules.Mode
 import com.ourlittlelife.rules.Resource
 import kotlinx.coroutines.launch
 
-/** Where the player is in getting to their world. */
+/** Where the player is in getting to a world. */
 sealed interface Session {
     data object Loading : Session
     data class SignedOut(val error: String? = null, val busy: Boolean = false) : Session
-    data class NoWorld(
+
+    /** The lobby: your worlds, plus starting a new one or joining a friend's. */
+    data class Lobby(
         val uid: String,
         val name: String,
+        val worlds: List<WorldStore.Summary>,
         val soloSummary: String?,
         val error: String? = null,
         val busy: Boolean = false,
     ) : Session
+
     data class InWorld(val worldId: String, val uid: String) : Session
 }
 
@@ -34,32 +39,58 @@ class SessionViewModel(application: Application) : AndroidViewModel(application)
     private val auth = Auth()
     private val store = WorldStore()
     private val soloSave = SaveStore(application.filesDir)
+    private val prefs = application.getSharedPreferences("session", Context.MODE_PRIVATE)
+
+    /** The world to reopen on launch. */
+    private var lastWorldId: String?
+        get() = prefs.getString("lastWorldId", null)
+        set(value) = prefs.edit().putString("lastWorldId", value).apply()
 
     var state by mutableStateOf<Session>(Session.Loading)
         private set
 
     init {
         viewModelScope.launch {
-            auth.users().collect { user -> state = if (user == null) Session.SignedOut() else findWorld(user) }
+            auth.users().collect { user ->
+                state = when {
+                    user == null -> Session.SignedOut()
+                    else -> reopenOrLobby(user)
+                }
+            }
         }
     }
 
-    private suspend fun findWorld(user: FirebaseUser): Session = try {
-        store.findWorldFor(user.uid)?.let { Session.InWorld(it, user.uid) } ?: noWorld(user)
-    } catch (e: Exception) {
-        noWorld(user, error = "Couldn't reach the game. Check your connection and try again.")
+    /** Straight back into the last world you played, if you still belong to it; otherwise the lobby. */
+    private suspend fun reopenOrLobby(user: FirebaseUser): Session {
+        val lobby = lobbyFor(user)
+        val last = lastWorldId
+        return when {
+            lobby !is Session.Lobby -> lobby
+            last != null && lobby.worlds.any { it.id == last } -> Session.InWorld(last, user.uid)
+            lobby.worlds.size == 1 && last == null -> enter(lobby.worlds.first().id, user.uid)
+            else -> lobby
+        }
     }
 
-    private fun noWorld(user: FirebaseUser, error: String? = null) =
-        Session.NoWorld(user.uid, Auth.firstName(user), soloSummary(), error)
+    private suspend fun lobbyFor(user: FirebaseUser, error: String? = null): Session = try {
+        val worlds = store.worldsFor(user.uid)
+        Session.Lobby(user.uid, Auth.firstName(user), worlds, soloSummary().takeIf { worlds.isEmpty() }, error)
+    } catch (e: Exception) {
+        Session.Lobby(user.uid, Auth.firstName(user), emptyList(), null, "Couldn't reach the game. Check your connection and try again.")
+    }
 
-    /** "Day 3 · 18 wood, 8 stone" for a solo game that will come along into the new world. */
+    /** "Day 3 · 18 wood, 8 stone": a solo game that comes along into your first world. */
     private fun soloSummary(): String? {
         val solo = soloSave.load() ?: return null
         val stock = Resource.entries.filter { solo.camp.storage[it] > 0 }
             .joinToString(", ") { "${solo.camp.storage[it]} ${it.label.lowercase()}" }
         val rooms = if (solo.camp.plot.rooms.isNotEmpty()) " · ${solo.camp.plot.rooms.size} room built" else ""
         return "Day ${solo.character.clock.day}" + (if (stock.isNotEmpty()) " · $stock" else "") + rooms
+    }
+
+    private fun enter(worldId: String, uid: String): Session {
+        lastWorldId = worldId
+        return Session.InWorld(worldId, uid)
     }
 
     fun signIn(activity: Activity) {
@@ -73,34 +104,54 @@ class SessionViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    fun openWorld(worldId: String) {
+        val lobby = state as? Session.Lobby ?: return
+        state = enter(worldId, lobby.uid)
+    }
+
+    /** Leaves the world you're in for the lobby. You stay a member and can come back any time. */
+    fun backToLobby() {
+        val user = auth.currentUser ?: return
+        lastWorldId = null
+        state = Session.Loading
+        viewModelScope.launch { state = lobbyFor(user) }
+    }
+
     fun create(mode: Mode) {
-        val current = state as? Session.NoWorld ?: return
-        state = current.copy(busy = true, error = null)
+        val lobby = state as? Session.Lobby ?: return
+        state = lobby.copy(busy = true, error = null)
         viewModelScope.launch {
             state = try {
-                Session.InWorld(store.create(current.uid, current.name, mode, soloSave.load()), current.uid)
+                // A solo game only comes along into your first world.
+                val solo = if (lobby.worlds.isEmpty()) soloSave.load() else null
+                enter(store.create(lobby.uid, lobby.name, mode, solo), lobby.uid)
             } catch (e: Exception) {
-                current.copy(busy = false, error = "Couldn't create the world. Check your connection and try again.")
+                lobby.copy(busy = false, error = "Couldn't create the world. Check your connection and try again.")
             }
         }
     }
 
     fun join(code: String) {
-        val current = state as? Session.NoWorld ?: return
-        if (code.trim().length != 6) {
-            state = current.copy(error = "Codes are 6 letters and numbers, like KQ7XMB.")
+        val lobby = state as? Session.Lobby ?: return
+        val clean = code.trim().uppercase()
+        if (clean.length != 6) {
+            state = lobby.copy(error = "Codes are 6 letters and numbers, like KQ7XMB.")
             return
         }
-        state = current.copy(busy = true, error = null)
+        lobby.worlds.firstOrNull { it.code == clean }?.let {
+            state = enter(it.id, lobby.uid)
+            return
+        }
+        state = lobby.copy(busy = true, error = null)
         viewModelScope.launch {
             state = try {
-                when (val outcome = store.join(code, current.uid, current.name)) {
-                    is WorldStore.JoinOutcome.Joined -> Session.InWorld(outcome.worldId, current.uid)
-                    WorldStore.JoinOutcome.NoSuchCode -> current.copy(busy = false, error = "No world has that code. Check it with your friend.")
-                    WorldStore.JoinOutcome.Full -> current.copy(busy = false, error = "That world already has two players.")
+                when (val outcome = store.join(clean, lobby.uid, lobby.name)) {
+                    is WorldStore.JoinOutcome.Joined -> enter(outcome.worldId, lobby.uid)
+                    WorldStore.JoinOutcome.NoSuchCode -> lobby.copy(busy = false, error = "No world has that code. Check it with your friend.")
+                    WorldStore.JoinOutcome.Full -> lobby.copy(busy = false, error = "That world already has two players.")
                 }
             } catch (e: Exception) {
-                current.copy(busy = false, error = "Couldn't join. Check your connection and try again.")
+                lobby.copy(busy = false, error = "Couldn't join. Check your connection and try again.")
             }
         }
     }

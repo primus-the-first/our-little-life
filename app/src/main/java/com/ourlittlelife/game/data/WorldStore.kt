@@ -27,9 +27,23 @@ class WorldStore(private val db: FirebaseFirestore = FirebaseFirestore.getInstan
     private val worlds = db.collection("worlds")
     private val codes = db.collection("codes")
 
-    /** The world this person belongs to, if any. */
-    suspend fun findWorldFor(uid: String): String? =
-        worlds.whereArrayContains("members", uid).limit(1).get().await().documents.firstOrNull()?.id
+    /** A world as the lobby shows it. */
+    data class Summary(val id: String, val code: String, val mode: Mode, val partnerName: String?, val day: Int)
+
+    /** Every world this person belongs to, most recently played first. */
+    suspend fun worldsFor(uid: String): List<Summary> =
+        worlds.whereArrayContains("members", uid).get().await().documents
+            .sortedByDescending { it.getTimestamp("updatedAt")?.seconds ?: 0 }
+            .mapNotNull { doc ->
+                val world = doc.getString("state")?.let(Worlds::decode) ?: return@mapNotNull null
+                Summary(
+                    id = doc.id,
+                    code = world.code,
+                    mode = world.mode,
+                    partnerName = world.players.values.firstOrNull { it.id != uid }?.character?.name,
+                    day = world.day,
+                )
+            }
 
     /** Creates a world with this person as host. A solo save, if there is one, comes along as the starting point. */
     suspend fun create(uid: String, name: String, mode: Mode, solo: SaveGame?): String {

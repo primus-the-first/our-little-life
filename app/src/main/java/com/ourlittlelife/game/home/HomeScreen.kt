@@ -18,7 +18,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
@@ -62,7 +64,7 @@ import com.ourlittlelife.rules.Storage
 import kotlinx.coroutines.delay
 
 @Composable
-fun HomeScreen(viewModel: GameViewModel = viewModel()) {
+fun HomeScreen(viewModel: GameViewModel = viewModel(), onBackToLobby: () -> Unit = {}) {
     val colors = OllTheme.colors
     val character = viewModel.character
     val clock = character.clock
@@ -148,7 +150,7 @@ fun HomeScreen(viewModel: GameViewModel = viewModel()) {
     }
 
     if (needsOpen) {
-        NeedsSheet(viewModel = viewModel, onDismiss = { needsOpen = false })
+        NeedsSheet(viewModel = viewModel, onDismiss = { needsOpen = false }, onBackToLobby = onBackToLobby)
     }
 }
 
@@ -543,7 +545,7 @@ private fun ChestContents(storage: Storage) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun NeedsSheet(viewModel: GameViewModel, onDismiss: () -> Unit) {
+private fun NeedsSheet(viewModel: GameViewModel, onDismiss: () -> Unit, onBackToLobby: () -> Unit) {
     val colors = OllTheme.colors
     val character = viewModel.character
     ModalBottomSheet(
@@ -552,7 +554,9 @@ private fun NeedsSheet(viewModel: GameViewModel, onDismiss: () -> Unit) {
         contentColor = colors.ink,
     ) {
         Column(
-            modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 32.dp),
+            modifier = Modifier
+                .verticalScroll(rememberScrollState())
+                .padding(start = 16.dp, end = 16.dp, bottom = 32.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text("${character.name}'s needs", style = OllType.title, color = colors.ink, modifier = Modifier.semantics { heading() })
@@ -565,6 +569,20 @@ private fun NeedsSheet(viewModel: GameViewModel, onDismiss: () -> Unit) {
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
+
+            Text("This world", style = OllType.heading, color = colors.ink, modifier = Modifier.semantics { heading() })
+            Text(
+                "Code ${viewModel.worldCode}. Share it so a friend can join" +
+                    (viewModel.partnerName?.let { ". You're playing with $it." } ?: "."),
+                style = OllType.body,
+                color = colors.inkMuted,
+            )
+            SecondaryButton(
+                text = "Back to lobby",
+                detail = "Switch worlds or join a friend",
+                onClick = { onDismiss(); onBackToLobby() },
+                modifier = Modifier.fillMaxWidth(),
+            )
         }
     }
 }

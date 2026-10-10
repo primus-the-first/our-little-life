@@ -95,11 +95,13 @@ private val modeLines = mapOf(
     Mode.PARTNERS to "Date nights, cuddles, slow dances",
 )
 
+/** The lobby: the worlds you belong to, then starting a new one or joining a friend's. */
 @Composable
-fun WorldSetupScreen(state: Session.NoWorld, onCreate: (Mode) -> Unit, onJoin: (String) -> Unit) {
+fun LobbyScreen(state: Session.Lobby, onOpen: (String) -> Unit, onCreate: (Mode) -> Unit, onJoin: (String) -> Unit) {
     val colors = OllTheme.colors
     var mode by rememberSaveable { mutableStateOf(Mode.BESTIES) }
     var code by rememberSaveable { mutableStateOf("") }
+    val hasWorlds = state.worlds.isNotEmpty()
 
     Column(
         modifier = Modifier
@@ -111,7 +113,27 @@ fun WorldSetupScreen(state: Session.NoWorld, onCreate: (Mode) -> Unit, onJoin: (
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         Text("Hi ${state.name}", style = OllType.caption, color = colors.inkMuted)
-        Text("Start your world", style = OllType.display, color = colors.ink, modifier = Modifier.semantics { heading() })
+
+        if (hasWorlds) {
+            Text("Your worlds", style = OllType.display, color = colors.ink, modifier = Modifier.semantics { heading() })
+            state.worlds.forEach { world ->
+                SecondaryButton(
+                    text = world.partnerName?.let { "With $it" } ?: "Waiting for a friend",
+                    detail = if (world.partnerName != null) "${world.mode.label} · Day ${world.day}" else "Code ${world.code}",
+                    onClick = { onOpen(world.id) },
+                    enabled = !state.busy,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+            Spacer(Modifier.height(8.dp))
+        }
+
+        Text(
+            if (hasWorlds) "Start a new world" else "Start your world",
+            style = if (hasWorlds) OllType.heading else OllType.display,
+            color = colors.ink,
+            modifier = Modifier.semantics { heading() },
+        )
         Text(
             "Pick what you two are. It changes what you can do together.",
             style = OllType.body,
@@ -145,7 +167,15 @@ fun WorldSetupScreen(state: Session.NoWorld, onCreate: (Mode) -> Unit, onJoin: (
             Text("Your solo game comes with you: $it.", style = OllType.body, color = colors.ink)
         }
 
-        PrimaryButton(
+        // With worlds listed above, creating another is a secondary choice; for a first world it's the main one.
+        if (hasWorlds) {
+            SecondaryButton(
+                text = if (state.busy) "Creating…" else "Create a new world",
+                onClick = { onCreate(mode) },
+                enabled = !state.busy,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        } else PrimaryButton(
             text = if (state.busy) "Creating…" else "Create our world",
             onClick = { onCreate(mode) },
             enabled = !state.busy,
