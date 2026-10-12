@@ -68,6 +68,7 @@ import com.ourlittlelife.rules.FurniturePlacement
 import com.ourlittlelife.rules.Crop
 import com.ourlittlelife.rules.Gardening
 import com.ourlittlelife.rules.Gesture
+import com.ourlittlelife.rules.Interiors
 import com.ourlittlelife.rules.Placement
 import com.ourlittlelife.rules.Walks
 import com.ourlittlelife.rules.Room
@@ -257,7 +258,21 @@ private fun MapArea(viewModel: GameViewModel, focus: Pair<Int, Int>, modifier: M
         val room = viewModel.insideRoom
         if (room != null) {
             val held = viewModel.holding
-            RoomCanvas(
+            val roomGhost = held?.let { Ghost(TileArea(it.x, it.y, it.kind.width, it.kind.height), viewModel.holdingPlacement() == FurniturePlacement.Ok) }
+            if (viewModel.view3d) Room3D(
+                room = room,
+                figures = listOfNotNull(
+                    Figure3D(character.name, viewModel.insideTile.first, viewModel.insideTile.second, viewModel.lookFor(viewModel.myPlayerId)),
+                    viewModel.partnerInHere?.let { other -> other.inside?.let { Figure3D(other.character.name, it.x, it.y, viewModel.lookFor(other.id)) } },
+                ),
+                focus = Interiors.width(room.kind) / 2 to Interiors.height(room.kind) / 2,
+                selected = (selection as? Selection.Piece)?.piece,
+                ghost = roomGhost,
+                onTapTile = viewModel::tapInside,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(bottom = if (viewModel.furnishing) TRAY_HEIGHT else 0.dp),
+            ) else RoomCanvas(
                 room = room,
                 characters = listOfNotNull(
                     PlacedCharacter(character.name, viewModel.myOutfit, viewModel.insideTile.first, viewModel.insideTile.second, colors.peach),
@@ -266,7 +281,7 @@ private fun MapArea(viewModel: GameViewModel, focus: Pair<Int, Int>, modifier: M
                     },
                 ),
                 selected = (selection as? Selection.Piece)?.piece,
-                ghost = held?.let { Ghost(TileArea(it.x, it.y, it.kind.width, it.kind.height), viewModel.holdingPlacement() == FurniturePlacement.Ok) },
+                ghost = roomGhost,
                 onTapTile = viewModel::tapInside,
                 // With the tray open, the room sits above it so every tile can still be tapped.
                 modifier = Modifier

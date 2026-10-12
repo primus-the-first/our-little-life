@@ -22,6 +22,10 @@ import com.google.android.filament.MaterialInstance
 import com.ourlittlelife.rules.Area
 import com.ourlittlelife.rules.Bed
 import com.ourlittlelife.rules.Crop
+import com.ourlittlelife.rules.Furniture
+import com.ourlittlelife.rules.FurnitureKind
+import com.ourlittlelife.rules.Interiors
+import com.ourlittlelife.rules.Room
 import com.ourlittlelife.rules.Gardening
 import com.ourlittlelife.rules.Look
 import com.ourlittlelife.rules.ObjectKind
@@ -77,6 +81,14 @@ private object Palette {
     val shoes = Color(0xFF3E2723)
     val hair = Color(0xFF2B1B14)
     val eyes = Color(0xFF1A1A1A)
+    val rug = Color(0xFFD9784A)
+    val stove = Color(0xFF424242)
+    val hob = Color(0xFF212121)
+    val basin = Color(0xFFE0E0E0)
+    val flame = Color(0xFFFFC107)
+    val fits = Color(0xFF66BB6A)
+    val blocked = Color(0xFFE57373)
+    val selected = Color(0xFF2B2B2B)
 }
 
 /** One person in the 3D world: where they stand and how they look. */
@@ -125,10 +137,77 @@ fun World3D(
     val engine = rememberEngine()
     val models = rememberModelLoader(engine)
     val materials = rememberMaterialLoader(engine)
-    val view = rememberView(engine)
 
     // The land and everything on it, rebuilt only when the plot changes (something built, planted or placed).
     val worldNodes = remember(plot) { buildWorld(engine, models, materials, plot) }
+
+    TiltedScene(
+        engine = engine,
+        models = models,
+        materials = materials,
+        staticNodes = worldNodes,
+        figures = figures,
+        focus = focus,
+        onTapTile = onTapTile,
+        description = "Your world in 3D. Tap the ground to walk, or tap something to use it. Pinch to zoom, drag to look around.",
+        modifier = modifier,
+    )
+}
+
+/**
+ * Inside a room in live 3D: a wooden floor, the two back walls full height and the two front walls cut
+ * down low so you can see in, a doorway, the furniture, and whoever is in here. Taps find the floor
+ * tile under your finger, exactly like the flat room, so furnishing and using things work unchanged.
+ * [ghost] is the outline of a piece being placed; [selected] is the piece whose sheet is open.
+ */
+@Composable
+fun Room3D(
+    room: Room,
+    figures: List<Figure3D>,
+    focus: Pair<Int, Int>,
+    selected: Furniture?,
+    ghost: Ghost?,
+    onTapTile: (Int, Int) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val engine = rememberEngine()
+    val models = rememberModelLoader(engine)
+    val materials = rememberMaterialLoader(engine)
+    val roomNodes = remember(room) { buildRoom(engine, models, materials, room) }
+    val marks = remember(selected, ghost) { buildMarks(engine, materials, selected, ghost) }
+    TiltedScene(
+        engine = engine,
+        models = models,
+        materials = materials,
+        staticNodes = roomNodes + marks,
+        figures = figures,
+        focus = focus,
+        onTapTile = onTapTile,
+        description = "Inside the ${room.kind.label.lowercase()} in 3D. Tap furniture to use it, or the floor to walk. Pinch to zoom, drag to look around.",
+        modifier = modifier,
+        startZoom = 0.85f,
+    )
+}
+
+/**
+ * The shared camera and people for the world and rooms: a camera tilted down from the south-east that
+ * glides after [focus], pinch to zoom, drag to look around (walking re-centres), people walking and
+ * breathing, and taps turned into the tile under the finger where the ray meets the floor (y = 0).
+ */
+@Composable
+private fun TiltedScene(
+    engine: Engine,
+    models: ModelLoader,
+    materials: MaterialLoader,
+    staticNodes: List<Node>,
+    figures: List<Figure3D>,
+    focus: Pair<Int, Int>,
+    onTapTile: (Int, Int) -> Unit,
+    description: String,
+    modifier: Modifier = Modifier,
+    startZoom: Float = 1f,
+) {
+    val view = rememberView(engine)
 
     // People walk from tile to tile in step with the game, turning to face where they're going.
     val people = figures.map { figure ->
@@ -163,13 +242,12 @@ fun World3D(
         }
     }
 
-    // A tilted camera a little way off to the south-east, gliding after whoever it follows.
     val target by animateOffsetAsState(
         targetValue = Offset(focus.first + 0.5f, focus.second + 0.5f),
         animationSpec = tween(400),
         label = "camera",
     )
-    var zoom by remember { mutableFloatStateOf(1f) }
+    var zoom by remember { mutableFloatStateOf(startZoom) }
     var pan by remember { mutableStateOf(Offset.Zero) }
     LaunchedEffect(focus) { pan = Offset.Zero }
     val camera = rememberCameraNode(engine)
@@ -181,14 +259,14 @@ fun World3D(
     }
 
     Scene(
-        modifier = modifier.semantics { contentDescription = "Your world in 3D. Tap the ground to walk, or tap something to use it. Pinch to zoom, drag to look around." },
+        modifier = modifier.semantics { contentDescription = description },
         engine = engine,
         view = view,
         modelLoader = models,
         materialLoader = materials,
         cameraNode = camera,
         cameraManipulator = null,
-        childNodes = worldNodes + people,
+        childNodes = staticNodes + people,
         onGestureListener = rememberOnGestureListener(
             onScale = { detector, _, _ ->
                 zoom = (zoom / detector.scaleFactor).coerceIn(MIN_ZOOM, MAX_ZOOM)
@@ -201,7 +279,6 @@ fun World3D(
                 pan = Offset(pan.x + (right - down) * 0.7071f, pan.y + (-right - down) * 0.7071f)
             },
             onSingleTapConfirmed = { event, _ ->
-                // Where the ray from the finger meets the ground (y = 0) is the tile that was tapped.
                 val ray = view.motionEventToRay(event)
                 val dy = ray.direction.y
                 if (dy < -1e-4f) {
@@ -293,6 +370,111 @@ private const val MAX_ZOOM = 3.2f
 private const val PAN_PER_PIXEL = 0.012f
 private const val CAMERA_BACK = 6f
 private const val CAMERA_HEIGHT = 7.5f
+
+/** Furniture models (assets/models) for the pieces that have one; the rest are drawn as simple shapes. */
+private fun furnitureModel(kind: FurnitureKind): String? = when (kind) {
+    FurnitureKind.BED -> "bed_double"
+    FurnitureKind.CHAIR -> "chair"
+    FurnitureKind.SOFA -> "sofa"
+    FurnitureKind.TABLE -> "table"
+    FurnitureKind.BOOKSHELF -> "bookcase"
+    FurnitureKind.PLANT -> "plant"
+    else -> null
+}
+
+/** How big a furniture model is drawn: its largest side, in tiles. Tall pieces stand taller than their footprint. */
+private fun furnitureSize(kind: FurnitureKind): Float = when (kind) {
+    FurnitureKind.BOOKSHELF -> 1.7f
+    FurnitureKind.PLANT -> 0.9f
+    else -> maxOf(kind.width, kind.height) * 0.95f
+}
+
+/** The room itself: floor, walls (back ones tall, front ones low), doorway, and its furniture. */
+private fun buildRoom(engine: Engine, models: ModelLoader, materials: MaterialLoader, room: Room): List<Node> {
+    val nodes = mutableListOf<Node>()
+    val colours = HashMap<Color, MaterialInstance>()
+    fun mat(c: Color) = colours.getOrPut(c) { materials.createColorInstance(c, roughness = 0.85f) }
+    fun box(x: Float, z: Float, w: Float, d: Float, height: Float, colour: Color, lift: Float = 0f) {
+        nodes += CubeNode(engine, size = Size(w, height, d), center = Position(x + w / 2, lift + height / 2, z + d / 2), materialInstance = mat(colour))
+    }
+
+    val w = Interiors.width(room.kind).toFloat()
+    val d = Interiors.height(room.kind).toFloat()
+    val wall = 0.15f
+    val tall = 2.4f
+    val low = 0.35f
+    val door = Interiors.door(room.kind).first.toFloat()
+
+    // A little ground around the room, so it doesn't float in the dark.
+    box(-3f, -3f, w + 6f, d + 6f, 0.1f, Palette.grass, lift = -0.12f)
+    box(0f, 0f, w, d, 0.04f, Palette.floor, lift = -0.04f)
+    // Back walls: tall, along the far side (z = 0) and the left side (x = 0).
+    box(-wall, -wall, w + wall * 2, wall, tall, Palette.wall)
+    box(-wall, 0f, wall, d, tall, Palette.wall)
+    // Front walls: low, so the camera sees over them; the front one has a gap for the door.
+    box(w, 0f, wall, d, low, Palette.wall)
+    box(-wall, d, door + wall, wall, low, Palette.wall)
+    box(door + 1f, d, w - door - 1f + wall, wall, low, Palette.wall)
+
+    val placements = HashMap<String, MutableList<Furniture>>()
+    room.furniture.forEach { piece ->
+        val x = piece.x.toFloat()
+        val z = piece.y.toFloat()
+        val pw = piece.kind.width.toFloat()
+        val pd = piece.kind.height.toFloat()
+        val model = furnitureModel(piece.kind)
+        when {
+            model != null -> placements.getOrPut(model) { mutableListOf() } += piece
+            piece.kind == FurnitureKind.RUG -> box(x + 0.05f, z + 0.05f, pw - 0.1f, pd - 0.1f, 0.02f, Palette.rug)
+            piece.kind == FurnitureKind.STOVE -> {
+                box(x + 0.08f, z + 0.08f, pw - 0.16f, pd - 0.16f, 0.85f, Palette.stove)
+                box(x + 0.2f, z + 0.2f, pw - 0.4f, pd - 0.4f, 0.03f, Palette.hob, lift = 0.85f)
+            }
+            piece.kind == FurnitureKind.WASHSTAND -> {
+                box(x + 0.1f, z + 0.1f, pw - 0.2f, pd - 0.2f, 0.75f, Palette.wood)
+                box(x + 0.22f, z + 0.22f, pw - 0.44f, pd - 0.44f, 0.08f, Palette.basin, lift = 0.75f)
+            }
+            piece.kind == FurnitureKind.CANDLES -> {
+                box(x + 0.4f, z + 0.4f, 0.2f, 0.2f, 0.9f, Palette.wood)
+                box(x + 0.44f, z + 0.44f, 0.12f, 0.12f, 0.12f, Palette.flame, lift = 0.9f)
+            }
+            else -> box(x + 0.1f, z + 0.1f, pw - 0.2f, pd - 0.2f, 0.6f, Palette.wood)
+        }
+    }
+    placements.forEach { (file, pieces) ->
+        models.createInstancedModel("models/$file.glb", pieces.size).zip(pieces).forEach { (instance, piece) ->
+            nodes += ModelNode(instance, autoAnimate = false, scaleToUnits = furnitureSize(piece.kind), centerOrigin = Position(0f, -1f, 0f)).apply {
+                position = Position(piece.x + piece.kind.width / 2f, 0f, piece.y + piece.kind.height / 2f)
+                // The table model runs front to back; its spot in the game runs left to right.
+                if (piece.kind == FurnitureKind.TABLE) rotation = Rotation(y = 90f)
+            }
+        }
+    }
+    return nodes
+}
+
+/** The outline of a piece being placed (green if it fits, berry if not) and a marker on the selected piece. */
+private fun buildMarks(engine: Engine, materials: MaterialLoader, selected: Furniture?, ghost: Ghost?): List<Node> {
+    val nodes = mutableListOf<Node>()
+    ghost?.let { (area, fits) ->
+        val colour = (if (fits) Palette.fits else Palette.blocked).copy(alpha = 0.45f)
+        nodes += CubeNode(
+            engine,
+            size = Size(area.width.toFloat(), 0.9f, area.height.toFloat()),
+            center = Position(area.x + area.width / 2f, 0.45f, area.y + area.height / 2f),
+            materialInstance = materials.createColorInstance(colour),
+        )
+    }
+    selected?.let { piece ->
+        nodes += CubeNode(
+            engine,
+            size = Size(piece.kind.width.toFloat(), 0.03f, piece.kind.height.toFloat()),
+            center = Position(piece.x + piece.kind.width / 2f, 0.015f, piece.y + piece.kind.height / 2f),
+            materialInstance = materials.createColorInstance(Palette.selected),
+        )
+    }
+    return nodes
+}
 
 /** Every static thing in the world, built once per change to the plot. */
 private fun buildWorld(engine: Engine, models: ModelLoader, materials: MaterialLoader, plot: Plot): List<Node> {
