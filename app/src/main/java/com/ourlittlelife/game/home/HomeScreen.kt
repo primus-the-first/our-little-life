@@ -1175,8 +1175,8 @@ private fun NeedsSheet(viewModel: GameViewModel, onDismiss: () -> Unit, onBackTo
 
             Text("This world", style = OllType.heading, color = colors.ink, modifier = Modifier.semantics { heading() })
             SecondaryButton(
-                text = if (viewModel.view3d) "Switch to the flat map" else "Try the 3D view",
-                detail = if (viewModel.view3d) "3D preview is on" else "Preview, with stand-in shapes",
+                text = if (viewModel.view3d) "Switch to the flat map" else "Switch to 3D",
+                detail = if (viewModel.view3d) "Lighter on older phones" else "Livelier, needs a newer phone",
                 onClick = { viewModel.chooseView3d(!viewModel.view3d) },
                 modifier = Modifier.fillMaxWidth(),
             )

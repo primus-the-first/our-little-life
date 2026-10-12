@@ -89,6 +89,13 @@ private object Palette {
     val fits = Color(0xFF66BB6A)
     val blocked = Color(0xFFE57373)
     val selected = Color(0xFF2B2B2B)
+    val tentDoor = Color(0xFF2E6E66)
+    val stone = Color(0xFF8D8D8D)
+    val log = Color(0xFF5D4037)
+    val metal = Color(0xFF9E9E9E)
+    val planks = Color(0xFFB08458)
+    val raceBoard = Color(0xFFE57373)
+    val trailBoard = Color(0xFF81C784)
 }
 
 /** What a person's body is doing: walking or standing on its own ([AUTO]), sitting, lying down, or busy with their hands. */
@@ -474,6 +481,83 @@ private fun placed(@Suppress("UNUSED_PARAMETER") engine: Engine, model: ModelNod
     return model
 }
 
+/**
+ * Camp things built from simple shapes until they have models: an A-frame tent, a campfire of crossed
+ * logs in a ring of stones, a workbench, a chest with a lid and a band, a washbasin, signposts, the
+ * bench on the hill and a little jetty for fishing. [x], [z] is the object's corner; [w], [d] its size.
+ */
+private fun campThing(engine: Engine, mat: (Color) -> MaterialInstance, kind: ObjectKind, x: Float, z: Float, w: Float, d: Float): List<Node> {
+    val parts = mutableListOf<Node>()
+    fun put(node: Node, at: Position, turn: Rotation = Rotation()) {
+        node.position = at
+        node.rotation = turn
+        parts += node
+    }
+    fun cube(sx: Float, sy: Float, sz: Float, c: Color) = CubeNode(engine, size = Size(sx, sy, sz), center = Position(0f), materialInstance = mat(c))
+    fun rod(r: Float, h: Float, c: Color) = CylinderNode(engine, radius = r, height = h, center = Position(0f), materialInstance = mat(c))
+    fun ball(r: Float, c: Color) = SphereNode(engine, radius = r, center = Position(0f), materialInstance = mat(c))
+    val cx = x + w / 2
+    val cz = z + d / 2
+
+    when (kind) {
+        ObjectKind.TENT -> {
+            // A box turned 45° on its long edge, half sunk into the ground, makes the two sloping sides.
+            put(cube(w - 0.3f, 1.25f, 1.25f, Palette.tent), Position(cx, 0f, cz), Rotation(x = 45f))
+            put(cube(0.06f, 0.5f, 0.02f, Palette.tentDoor), Position(cx, 0.25f, cz + 0.89f))
+            put(rod(0.03f, 1.0f, Palette.wood), Position(cx - (w - 0.3f) / 2 - 0.05f, 0.5f, cz))
+            put(rod(0.03f, 1.0f, Palette.wood), Position(cx + (w - 0.3f) / 2 + 0.05f, 0.5f, cz))
+        }
+        ObjectKind.CAMPFIRE -> {
+            for (i in 0 until 8) {
+                val a = Math.toRadians(i * 45.0)
+                put(ball(0.08f, Palette.stone), Position(cx + 0.32f * kotlin.math.cos(a).toFloat(), 0.05f, cz + 0.32f * kotlin.math.sin(a).toFloat()))
+            }
+            put(rod(0.05f, 0.5f, Palette.log), Position(cx, 0.06f, cz), Rotation(z = 90f, y = 30f))
+            put(rod(0.05f, 0.5f, Palette.log), Position(cx, 0.08f, cz), Rotation(z = 90f, y = -30f))
+            put(ball(0.12f, Palette.fire), Position(cx, 0.17f, cz))
+            put(ball(0.07f, Palette.flame), Position(cx, 0.28f, cz))
+        }
+        ObjectKind.WORKBENCH -> {
+            put(cube(0.85f, 0.08f, 0.6f, Palette.wood), Position(cx, 0.72f, cz))
+            for (sx in listOf(-0.35f, 0.35f)) for (sz in listOf(-0.22f, 0.22f)) put(cube(0.07f, 0.7f, 0.07f, Palette.log), Position(cx + sx, 0.35f, cz + sz))
+            put(cube(0.18f, 0.14f, 0.14f, Palette.metal), Position(cx + 0.28f, 0.83f, cz))
+            put(cube(0.3f, 0.06f, 0.08f, Palette.planks), Position(cx - 0.15f, 0.79f, cz - 0.1f))
+        }
+        ObjectKind.CHEST -> {
+            put(cube(0.7f, 0.42f, 0.48f, Palette.wood), Position(cx, 0.21f, cz))
+            put(cube(0.74f, 0.12f, 0.52f, Palette.log), Position(cx, 0.48f, cz))
+            put(cube(0.08f, 0.56f, 0.53f, Palette.metal), Position(cx, 0.27f, cz))
+        }
+        ObjectKind.WASHBASIN -> {
+            put(rod(0.06f, 0.7f, Palette.log), Position(cx, 0.35f, cz))
+            put(rod(0.28f, 0.12f, Palette.basin), Position(cx, 0.76f, cz))
+            put(rod(0.23f, 0.02f, Palette.water), Position(cx, 0.82f, cz))
+        }
+        ObjectKind.SIGNPOST, ObjectKind.RACE_SIGN, ObjectKind.TRAILHEAD -> {
+            put(rod(0.05f, 1.3f, Palette.log), Position(cx, 0.65f, cz))
+            val board = when (kind) {
+                ObjectKind.RACE_SIGN -> Palette.raceBoard
+                ObjectKind.TRAILHEAD -> Palette.trailBoard
+                else -> Palette.planks
+            }
+            put(cube(0.62f, 0.26f, 0.05f, board), Position(cx + 0.12f, 1.05f, cz), Rotation(y = 20f))
+        }
+        ObjectKind.BENCH -> {
+            put(cube(0.9f, 0.07f, 0.36f, Palette.planks), Position(cx, 0.42f, cz))
+            put(cube(0.9f, 0.3f, 0.06f, Palette.planks), Position(cx, 0.65f, cz - 0.17f), Rotation(x = -10f))
+            for (sx in listOf(-0.38f, 0.38f)) put(cube(0.07f, 0.42f, 0.32f, Palette.log), Position(cx + sx, 0.21f, cz))
+        }
+        ObjectKind.FISHING_SPOT -> {
+            put(cube(0.95f, 0.08f, 0.95f, Palette.planks), Position(cx, 0.08f, cz))
+            for (sx in listOf(-0.4f, 0.4f)) for (sz in listOf(-0.4f, 0.4f)) put(rod(0.04f, 0.3f, Palette.log), Position(cx + sx, 0f, cz + sz))
+            put(rod(0.015f, 1.4f, Palette.log), Position(cx - 0.35f, 0.6f, cz), Rotation(z = 55f))
+            put(cube(0.25f, 0.18f, 0.18f, Palette.raceBoard), Position(cx + 0.25f, 0.21f, cz + 0.2f))
+        }
+        else -> put(cube(w - 0.3f, 0.6f, d - 0.3f, Palette.wood), Position(cx, 0.3f, cz))
+    }
+    return parts
+}
+
 /** Furniture models (assets/models) for the pieces that have one; the rest are drawn as simple shapes. */
 private fun furnitureModel(kind: FurnitureKind): String? = when (kind) {
     FurnitureKind.BED -> "bed_double"
@@ -659,9 +743,7 @@ private fun buildWorld(engine: Engine, models: ModelLoader, materials: MaterialL
             ObjectKind.TREE -> place(Models.trees[variety % Models.trees.size], x + 0.5f, z + 0.5f, turn)
             ObjectKind.ROCK -> place(Models.rocks[variety % Models.rocks.size], x + 0.5f, z + 0.5f, turn)
             ObjectKind.BUSH -> place(Models.bushes[variety % Models.bushes.size], x + 0.5f, z + 0.5f, turn)
-            ObjectKind.TENT -> box(x + 0.1f, z + 0.1f, w - 0.2f, d - 0.2f, 1.1f, Palette.tent)
-            ObjectKind.CAMPFIRE -> box(x + 0.3f, z + 0.3f, 0.4f, 0.4f, 0.25f, Palette.fire)
-            else -> box(x + 0.15f, z + 0.15f, w - 0.3f, d - 0.3f, 0.6f, Palette.wood)
+            else -> nodes += campThing(engine, ::mat, obj.kind, x, z, w, d)
         }
     }
 

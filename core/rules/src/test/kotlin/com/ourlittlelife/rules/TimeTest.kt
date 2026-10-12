@@ -17,8 +17,8 @@ class TimeTest {
         val jo = Character("Jo")
         val later = Rules.passTime(jo, 60)
         assertEquals(Rules.DAY_START + 60, later.clock.minute)
-        assertEquals(100 - 6, later.needs[Need.HUNGER])
-        assertEquals(100 - 4, later.needs[Need.ENERGY])
+        assertEquals(100 - 3, later.needs[Need.HUNGER])
+        assertEquals(100 - 2, later.needs[Need.ENERGY])
     }
 
     @Test

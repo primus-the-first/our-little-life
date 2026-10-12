@@ -19,13 +19,16 @@ object Rules {
     /** "Late": the clock keeps going after this, but the day button starts to nudge you to bed. */
     const val BEDTIME = 23 * 60
 
-    /** How much each need drops per waking hour. */
+    /**
+     * How much each need drops per waking hour. Gentle, since the clock runs while you play: a whole
+     * day of idling leaves you hungry and tired but not empty, so a meal or two and a wash keep you going.
+     */
     val decayPerHour: Map<Need, Int> = mapOf(
-        ENERGY to 4,
-        HUNGER to 6,
-        FUN to 3,
-        SOCIAL to 2,
-        HYGIENE to 3,
+        ENERGY to 2,
+        HUNGER to 3,
+        FUN to 2,
+        SOCIAL to 1,
+        HYGIENE to 2,
     )
 
     /** What one night does to each need. */

@@ -36,11 +36,18 @@ class RulesTest {
     @Test
     fun `needs drop by their hourly rate`() {
         val jo = Character("Jo").doing(idleHour)
-        assertEquals(96, jo.needs[ENERGY])
-        assertEquals(94, jo.needs[HUNGER])
-        assertEquals(97, jo.needs[FUN])
-        assertEquals(98, jo.needs[SOCIAL])
-        assertEquals(97, jo.needs[HYGIENE])
+        assertEquals(98, jo.needs[ENERGY])
+        assertEquals(97, jo.needs[HUNGER])
+        assertEquals(98, jo.needs[FUN])
+        assertEquals(99, jo.needs[SOCIAL])
+        assertEquals(98, jo.needs[HYGIENE])
+    }
+
+    @Test
+    fun `a whole waking day of doing nothing leaves you hungry and tired, but nowhere near empty`() {
+        val idle = Rules.passTime(Character("Jo"), 16 * 60)
+        Need.entries.forEach { need -> assertTrue(idle.needs[need] >= 40, "$need fell to ${idle.needs[need]}") }
+        assertTrue(idle.needs[HUNGER] < 60, "hunger should still call for a meal or two")
     }
 
     @Test

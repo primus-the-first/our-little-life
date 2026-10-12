@@ -175,7 +175,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     private val viewPrefs = application.getSharedPreferences("view", android.content.Context.MODE_PRIVATE)
 
     /** Whether the world is drawn in 3D (still a preview) or as the flat map. Remembered on this phone. */
-    var view3d by mutableStateOf(viewPrefs.getBoolean("3d", false))
+    var view3d by mutableStateOf(viewPrefs.getBoolean("3d", strongPhone(application)))
         private set
 
     fun chooseView3d(on: Boolean) {
@@ -958,8 +958,18 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     private fun refusal(reason: ActionResult): String = "You're asleep. The day starts when everyone has gone to bed."
 }
 
-/** Idle game minutes between saves: about every quarter of a game hour. */
-private const val SAVE_EVERY_MINUTES = 15
+/**
+ * Idle game minutes between saves: one game hour (a real minute). Saving any more often would round the
+ * slowest needs' drop down to nothing.
+ */
+private const val SAVE_EVERY_MINUTES = 60
+
+/** 3D starts on for phones with room for it; older or low-memory phones start on the lighter flat map. */
+private fun strongPhone(context: android.content.Context): Boolean {
+    val am = context.getSystemService(android.content.Context.ACTIVITY_SERVICE) as android.app.ActivityManager
+    val memory = android.app.ActivityManager.MemoryInfo().also(am::getMemoryInfo)
+    return !am.isLowRamDevice && memory.totalMem >= 3L * 1024 * 1024 * 1024
+}
 
 /** Actions up to this long play out on screen; longer ones (work, building) happen in one go. */
 private const val PLAY_OUT_MAX_MINUTES = 90

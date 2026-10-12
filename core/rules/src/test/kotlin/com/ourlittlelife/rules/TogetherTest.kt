@@ -31,26 +31,26 @@ class TogetherTest {
     fun `stargazing alone is an hour of fun`() {
         val jo = joAfterStargazing(world(mayaAt = 20 to 20))
         assertEquals(Rules.DAY_START + 60, jo.clock.minute)
-        assertEquals(50 - 3 + 20, jo.needs[Need.FUN])
-        assertEquals(50 - 2, jo.needs[Need.SOCIAL])
+        assertEquals(50 - 2 + 20, jo.needs[Need.FUN])
+        assertEquals(50 - 1, jo.needs[Need.SOCIAL])
     }
 
     @Test
     fun `with your partner close by it's social too`() {
         val jo = joAfterStargazing(world(mayaAt = 13 to 11))
-        assertEquals(50 - 2 + Together.NEARBY_SOCIAL, jo.needs[Need.SOCIAL])
+        assertEquals(50 - 1 + Together.NEARBY_SOCIAL, jo.needs[Need.SOCIAL])
     }
 
     @Test
     fun `stargazing together counts for even more`() {
         val jo = joAfterStargazing(world(mayaAt = 12 to 12, mayaActivity = Activity.STARGAZING))
-        assertEquals(50 - 2 + Together.TOGETHER_SOCIAL, jo.needs[Need.SOCIAL])
+        assertEquals(50 - 1 + Together.TOGETHER_SOCIAL, jo.needs[Need.SOCIAL])
     }
 
     @Test
     fun `a partner who is asleep or far away doesn't count`() {
-        assertEquals(48, joAfterStargazing(world(mayaAt = 12 to 11, mayaAsleep = true)).needs[Need.SOCIAL])
-        assertEquals(48, joAfterStargazing(world(mayaAt = 11, 15)).needs[Need.SOCIAL])
+        assertEquals(49, joAfterStargazing(world(mayaAt = 12 to 11, mayaAsleep = true)).needs[Need.SOCIAL])
+        assertEquals(49, joAfterStargazing(world(mayaAt = 11, 15)).needs[Need.SOCIAL])
     }
 
     @Test
