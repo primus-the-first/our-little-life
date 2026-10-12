@@ -61,6 +61,7 @@ import com.ourlittlelife.rules.Gathering
 import com.ourlittlelife.rules.FurnitureCategory
 import com.ourlittlelife.rules.FurnitureKind
 import com.ourlittlelife.rules.FurniturePlacement
+import com.ourlittlelife.rules.Gesture
 import com.ourlittlelife.rules.Placement
 import com.ourlittlelife.rules.Walks
 import com.ourlittlelife.rules.Room
@@ -890,6 +891,17 @@ private fun PersonSheet(playerId: String, viewModel: GameViewModel) {
             Text("Skills arrive with careers.", style = OllType.caption, color = colors.inkMuted)
 
             if (!isMe) {
+                Text("Say hello", style = OllType.heading, color = colors.ink, modifier = Modifier.semantics { heading() })
+                Gesture.entries.forEach { gesture ->
+                    val blocked = viewModel.gestureProblem(gesture)
+                    SecondaryButton(
+                        text = gesture.label,
+                        detail = blocked ?: if (viewModel.gestureUsedToday(gesture)) "Again, just because" else "+${gesture.social} Social",
+                        enabled = blocked == null,
+                        onClick = { viewModel.greet(gesture) },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
                 val problem = viewModel.walkProblem()
                 when {
                     viewModel.walkInviteFrom?.id == playerId -> PrimaryButton(

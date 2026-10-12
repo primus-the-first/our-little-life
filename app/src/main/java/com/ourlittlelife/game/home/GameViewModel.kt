@@ -16,6 +16,7 @@ import com.ourlittlelife.rules.Building
 import com.ourlittlelife.rules.Camp
 import com.ourlittlelife.rules.Character
 import com.ourlittlelife.rules.Furniture
+import com.ourlittlelife.rules.Gesture
 import com.ourlittlelife.rules.FurnitureActions
 import com.ourlittlelife.rules.FurnitureKind
 import com.ourlittlelife.rules.FurniturePlacement
@@ -171,8 +172,15 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         world = next
         if (!ready) return
 
-        // Your partner said yes to your walk: play it here too, with them leading.
+        // Someone greeted you since the last update.
         val now = me
+        val greeting = now.greeting
+        if (before != null && greeting != null && greeting.count > (before.greeting?.count ?: 0)) {
+            val who = next.players[greeting.from]?.character?.name ?: "Someone"
+            message = "$who ${greeting.gesture.past}."
+        }
+
+        // Your partner said yes to your walk: play it here too, with them leading.
         if (before?.activity == Activity.WALK_INVITE && now.activity == null && now.tile == Walks.BEHIND_END &&
             now.character.clock.minute > before.character.clock.minute
         ) {
@@ -275,6 +283,41 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                 if (room != null && actionsFor(room).isNotEmpty()) selection = Selection.InRoom(room)
             }
         }
+    }
+
+    /** A quick hello: wave, high five or hug. */
+    fun greet(gesture: Gesture) {
+        selection = null
+        val name = partnerName ?: return
+        val counts = gesture !in me.gesturesToday
+        message = when (gesture) {
+            Gesture.WAVE -> "You waved at $name."
+            Gesture.HIGH_FIVE -> "High five with $name."
+            Gesture.HUG -> "You hugged $name."
+        } + if (counts) " +${gesture.social} social." else ""
+        commit(onSaved = { applied -> if (!applied) message = "$name is out of reach now." }) { w -> Together.greet(here(w), myId, gesture) }
+    }
+
+    /** Why a gesture can't happen right now, or null if it can. */
+    fun gestureProblem(gesture: Gesture): String? {
+        val other = partner ?: return "Nobody here yet"
+        val apart = Together.distance(here(world!!).player(myId), other)
+        return when {
+            character.asleep -> "You're asleep"
+            other.character.asleep -> "${other.character.name} is asleep"
+            apart == null -> "You're not in the same place"
+            apart > gesture.reach -> if (gesture.reach <= 1) "Stand right next to them" else "Get a bit closer"
+            else -> null
+        }
+    }
+
+    fun gestureUsedToday(gesture: Gesture): Boolean = ready && gesture in me.gesturesToday
+
+    /** The world with this player where they're drawn right now, which runs ahead of the save while walking. */
+    private fun here(w: World): World {
+        val p = w.player(myId)
+        return if (p.inside != null) Interiors.moveTo(w, myId, insideTile)
+        else w.withPlayer(p.copy(tileX = characterTile.first, tileY = characterTile.second))
     }
 
     /** Why you can't ask for a walk right now, or null if you can. */
@@ -467,13 +510,10 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                     return
                 }
                 walkTo(spot, saveOnArrival = false) {
-                    commit(onSaved = { applied -> reportUse(applied, obj, action) }) { w ->
-                        val p = w.player(myId)
-                        when (val fresh = w.camp.use(p.character, obj, action)) {
-                            is UseResult.Done -> w.copy(camp = fresh.camp)
-                                .withPlayer(p.copy(character = fresh.character, tileX = spot.first, tileY = spot.second))
-                            else -> null
-                        }
+                    val here = world!!.let { w -> w.withPlayer(w.player(myId).copy(tileX = spot.first, tileY = spot.second)) }
+                    val bonus = Together.companyBonus[action]?.takeIf { Together.hasCompany(here, here.player(myId)) }
+                    commit(onSaved = { applied -> reportUse(applied, obj, action, bonus) }) { w ->
+                        Together.use(w.withPlayer(w.player(myId).copy(tileX = spot.first, tileY = spot.second)), myId, obj, action)
                     }
                 }
             }
@@ -485,10 +525,11 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private fun reportUse(applied: Boolean, obj: PlotObject, action: Action) {
+    private fun reportUse(applied: Boolean, obj: PlotObject, action: Action, bonus: Int? = null) {
         val yielded = action.yields.entries.firstOrNull()
         message = when {
             !applied -> "${partnerName ?: "Someone"} got to the ${obj.kind.label.lowercase()} first."
+            bonus != null -> "Better with ${partnerName ?: "company"}. +$bonus social."
             yielded?.key == Resource.COINS -> "A day's work done. +${yielded.value} coins."
             yielded != null -> "+${yielded.value} ${yielded.key.label.lowercase()} in the chest."
             else -> null

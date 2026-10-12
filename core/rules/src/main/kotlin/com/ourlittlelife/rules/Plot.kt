@@ -84,14 +84,14 @@ object StarterPlot {
 object ObjectActions {
     fun forKind(kind: ObjectKind): List<Action> = when (kind) {
         ObjectKind.TENT -> listOf(StarterActions.nap)
-        ObjectKind.CAMPFIRE -> listOf(StarterActions.cook, StarterActions.snack, StarterActions.stargaze)
+        ObjectKind.CAMPFIRE -> listOf(StarterActions.cook, StarterActions.snack, Together.stories, StarterActions.stargaze)
         ObjectKind.WASHBASIN -> listOf(StarterActions.wash)
         ObjectKind.SIGNPOST -> listOf(StarterActions.work)
         ObjectKind.TREE -> listOf(Gathering.chop)
         ObjectKind.ROCK -> listOf(Gathering.breakRock)
         ObjectKind.BUSH -> listOf(Gathering.pickFiber)
         ObjectKind.WORKBENCH -> listOf(Refining.sawPlanks, Refining.fireBricks, Refining.weaveCloth)
-        ObjectKind.BENCH -> listOf(StarterActions.stargaze, Outdoors.sit)
+        ObjectKind.BENCH -> listOf(StarterActions.stargaze, Outdoors.sit, Together.picnic)
         ObjectKind.TRAILHEAD -> listOf(Walks.alone)
         // The chest just shows what's stored; the racecourse isn't open yet.
         ObjectKind.CHEST, ObjectKind.RACE_SIGN -> emptyList()

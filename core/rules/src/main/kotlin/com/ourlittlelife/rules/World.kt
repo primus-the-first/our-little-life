@@ -29,6 +29,8 @@ data class Player(
     val sleptAt: Long? = null,
     val activity: Activity? = null,
     val inside: Inside? = null,
+    val greeting: Greeting? = null,
+    val gesturesToday: List<Gesture> = emptyList(),
 ) {
     val tile: Pair<Int, Int> get() = tileX to tileY
 }
@@ -102,7 +104,7 @@ object Worlds {
         if (!Rules.canAdvance(characters)) return world
         val woken = Rules.advanceDay(characters, restful = world.camp.hasRoof)
         val players = ids.zip(woken).associate { (id, character) ->
-            id to world.player(id).copy(character = character, sleptAt = null)
+            id to world.player(id).copy(character = character, sleptAt = null, gesturesToday = emptyList())
         }
         return world.copy(players = players, camp = world.camp.nextDay())
     }
