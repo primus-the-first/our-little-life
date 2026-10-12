@@ -65,6 +65,8 @@ import com.ourlittlelife.rules.Gathering
 import com.ourlittlelife.rules.FurnitureCategory
 import com.ourlittlelife.rules.FurnitureKind
 import com.ourlittlelife.rules.FurniturePlacement
+import com.ourlittlelife.rules.Crop
+import com.ourlittlelife.rules.Gardening
 import com.ourlittlelife.rules.Gesture
 import com.ourlittlelife.rules.Placement
 import com.ourlittlelife.rules.Walks
@@ -488,7 +490,7 @@ private fun PartnerLine(viewModel: GameViewModel, modifier: Modifier = Modifier)
 @Composable
 private fun ResourceStrip(storage: Storage, modifier: Modifier = Modifier) {
     val colors = OllTheme.colors
-    val shown = Resource.entries.filter { !it.refined || storage[it] > 0 }
+    val shown = Resource.entries.filter { (!it.refined && !it.food) || storage[it] > 0 }
     FlowRow(
         modifier = modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -729,6 +731,54 @@ private fun furnitureProblem(placement: FurniturePlacement): String? = when (pla
     FurniturePlacement.BlocksDoor -> "Keep the door clear"
 }
 
+/** The garden's beds: water them all at once, plant empty ones, pick ripe ones. */
+@Composable
+private fun GardenBeds(garden: Room, viewModel: GameViewModel) {
+    val colors = OllTheme.colors
+    val thirsty = garden.beds.count { it.crop != null && !Gardening.ready(it) && !it.watered }
+    SecondaryButton(
+        text = "Water the beds",
+        detail = if (thirsty > 0) "$thirsty need water" else "Nothing needs water",
+        enabled = thirsty > 0,
+        onClick = { viewModel.water(garden) },
+        modifier = Modifier.fillMaxWidth(),
+    )
+    garden.beds.forEachIndexed { i, bed ->
+        val crop = bed.crop
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(
+                when {
+                    crop == null -> "Bed ${i + 1} · empty"
+                    Gardening.ready(bed) -> "Bed ${i + 1} · ${crop.label} · ready"
+                    else -> "Bed ${i + 1} · ${crop.label} · day ${bed.grown} of ${crop.days}" + if (bed.watered) " · watered" else " · needs water"
+                },
+                style = OllType.body,
+                color = colors.ink,
+            )
+            when {
+                crop == null -> Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Crop.entries.forEach { option ->
+                        val affordable = viewModel.camp.storage[Resource.COINS] >= option.seedCoins
+                        SecondaryButton(
+                            text = option.label,
+                            detail = "${option.seedCoins}c",
+                            enabled = affordable,
+                            onClick = { viewModel.plant(garden, i, option) },
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                }
+                Gardening.ready(bed) -> SecondaryButton(
+                    text = "Harvest",
+                    detail = "+${crop.yield} ${crop.produce.label.lowercase()}",
+                    onClick = { viewModel.harvest(garden, i) },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        }
+    }
+}
+
 /** A piece of furniture inside a room: what it offers. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -800,7 +850,9 @@ private fun RoomSheet(room: Room, viewModel: GameViewModel, asleep: Boolean) {
         contentColor = colors.ink,
     ) {
         Column(
-            modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 32.dp),
+            modifier = Modifier
+                .verticalScroll(rememberScrollState())
+                .padding(start = 16.dp, end = 16.dp, bottom = 32.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text(room.kind.label, style = OllType.title, color = colors.ink, modifier = Modifier.semantics { heading() })
@@ -810,12 +862,16 @@ private fun RoomSheet(room: Room, viewModel: GameViewModel, asleep: Boolean) {
             if (asleep) {
                 Text("Everyone's asleep. Start the next day first.", style = OllType.body, color = colors.inkMuted)
             } else {
-                SecondaryButton(
-                    text = "Go inside",
-                    detail = "See the room",
-                    onClick = { viewModel.goInside(room) },
-                    modifier = Modifier.fillMaxWidth(),
-                )
+                if (room.kind == RoomKind.GARDEN) {
+                    GardenBeds(room, viewModel)
+                } else {
+                    SecondaryButton(
+                        text = "Go inside",
+                        detail = "See the room",
+                        onClick = { viewModel.goInside(room) },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
                 if (room.kind == RoomKind.CABIN) SleepHereButton(viewModel)
                 viewModel.actionsFor(room).forEach { action ->
                     SecondaryButton(

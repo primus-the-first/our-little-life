@@ -64,7 +64,8 @@ data class Action(
 )
 
 /** Materials: raw ones are gathered on the plot, refined ones are made at the workbench. */
-enum class Resource(val label: String, val refined: Boolean = false) {
+/** What can be in the chest. [refined] materials and [food] only show once you have some. */
+enum class Resource(val label: String, val refined: Boolean = false, val food: Boolean = false) {
     WOOD("Wood"),
     STONE("Stone"),
     FIBER("Fiber"),
@@ -72,7 +73,10 @@ enum class Resource(val label: String, val refined: Boolean = false) {
     BRICKS("Bricks", refined = true),
     CLOTH("Cloth", refined = true),
     COINS("Coins"),
-    FISH("Fish"),
+    FISH("Fish", food = true),
+    CARROT("Carrots", food = true),
+    TOMATO("Tomatoes", food = true),
+    PUMPKIN("Pumpkins", food = true),
 }
 
 /** The shared storage chest: how much of each resource the pair has. */

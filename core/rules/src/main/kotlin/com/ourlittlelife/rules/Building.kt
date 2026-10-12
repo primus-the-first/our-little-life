@@ -23,6 +23,7 @@ data class Room(
     val x: Int,
     val y: Int,
     val furniture: List<Furniture> = Interiors.starterFurniture(kind),
+    val beds: List<Bed> = Gardening.starterBeds(kind),
 ) {
 
     fun covers(tileX: Int, tileY: Int): Boolean =

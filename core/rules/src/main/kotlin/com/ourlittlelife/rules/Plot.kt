@@ -85,7 +85,7 @@ object StarterPlot {
 object ObjectActions {
     fun forKind(kind: ObjectKind): List<Action> = when (kind) {
         ObjectKind.TENT -> listOf(StarterActions.nap)
-        ObjectKind.CAMPFIRE -> listOf(StarterActions.cook, Fishing.grill, StarterActions.snack, Together.stories, StarterActions.stargaze)
+        ObjectKind.CAMPFIRE -> listOf(StarterActions.cook, Fishing.grill, Cooking.roast, StarterActions.snack, Together.stories, StarterActions.stargaze)
         ObjectKind.WASHBASIN -> listOf(StarterActions.wash)
         ObjectKind.SIGNPOST -> listOf(StarterActions.work)
         ObjectKind.TREE -> listOf(Gathering.chop)

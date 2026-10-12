@@ -64,7 +64,7 @@ data class Camp(
     }
 
     /** Overnight, every tree, rock and bush grows back. The chest keeps what's in it. */
-    fun nextDay(): Camp = copy(usesToday = emptyMap())
+    fun nextDay(): Camp = copy(usesToday = emptyMap(), plot = Gardening.grow(plot))
 
     /** True once the cabin stands: nights are spent in a real bed. */
     val hasRoof: Boolean get() = plot.rooms.any { it.kind == RoomKind.CABIN }

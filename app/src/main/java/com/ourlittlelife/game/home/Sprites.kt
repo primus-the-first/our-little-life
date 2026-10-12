@@ -2,6 +2,9 @@ package com.ourlittlelife.game.home
 
 import androidx.compose.ui.graphics.Color
 import com.ourlittlelife.rules.Area
+import com.ourlittlelife.rules.Bed
+import com.ourlittlelife.rules.Crop
+import com.ourlittlelife.rules.Gardening
 import com.ourlittlelife.rules.FurnitureKind
 import com.ourlittlelife.rules.ObjectKind
 import com.ourlittlelife.rules.Plot
@@ -26,6 +29,26 @@ object Sprites {
 
     /** Wooden walls around rooms: part of the world art, matched to the Kenney planks, not a UI colour. */
     val wallColor = Color(0xFF8A5A3C)
+
+    /** Damp soil in a bed that's been watered today: world art, not a UI colour. */
+    val wetSoil = Color(0x553B2414)
+
+    /** What a garden bed shows: nothing when empty, a sprout, a young plant, then the ripe crop. */
+    fun crop(bed: Bed): Sprite? {
+        val crop = bed.crop ?: return null
+        return when {
+            Gardening.ready(bed) -> when (crop) {
+                Crop.CARROT -> Sprite(Sheet.OUTDOOR, 25, 10)
+                Crop.TOMATO -> Sprite(Sheet.OUTDOOR, 24, 10)
+                Crop.PUMPKIN -> Sprite(Sheet.OUTDOOR, 26, 10)
+            }
+            bed.grown == 0 -> Sprite(Sheet.OUTDOOR, 22, 10)
+            else -> Sprite(Sheet.OUTDOOR, 22, 11)
+        }
+    }
+
+    /** Where bed [index] sits in a garden: a 3 × 2 block inside its fence. */
+    fun bedTile(index: Int): Pair<Int, Int> = 1 + index % 3 to 1 + index / 3
 
     /** The threshold in the doorway, a shade lighter than the wall. */
     val floorDoorway = Color(0xFFC08A5C)

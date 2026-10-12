@@ -17,7 +17,10 @@ import com.ourlittlelife.rules.Building
 import com.ourlittlelife.rules.Camp
 import com.ourlittlelife.rules.Character
 import com.ourlittlelife.rules.Clock
+import com.ourlittlelife.rules.Crop
 import com.ourlittlelife.rules.FishKind
+import com.ourlittlelife.rules.GardenResult
+import com.ourlittlelife.rules.Gardening
 import com.ourlittlelife.rules.Fishing
 import com.ourlittlelife.rules.Furniture
 import com.ourlittlelife.rules.Gesture
@@ -348,7 +351,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             buildMode && room == null -> selection = Selection.Ground(x, y)
             character.asleep -> message = "You're asleep. The day starts when everyone has gone to bed."
             else -> walkTo(x to y, saveOnArrival = true) {
-                if (room != null && actionsFor(room).isNotEmpty()) selection = Selection.InRoom(room)
+                if (room != null) selection = Selection.InRoom(room)
             }
         }
     }
@@ -694,6 +697,46 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                 else -> "What a sky. +20 fun."
             }
         }) { w -> Together.stargaze(w, myId) }
+    }
+
+    /** Plants [crop] in a garden bed: seeds bought from the chest, then a few minutes' work. */
+    fun plant(garden: Room, index: Int, crop: Crop) {
+        selection = null
+        when (val check = Gardening.plant(world!!, myId, garden.id, index, crop)) {
+            is GardenResult.Missing -> message = describeShortfall(check.shortfall) + " in the chest."
+            GardenResult.BedTaken -> message = "Something's already growing there."
+            GardenResult.Refused -> message = refusal(ActionResult.Asleep)
+            is GardenResult.Done -> playOut(Gardening.planting) {
+                commit(onSaved = { applied ->
+                    message = if (applied) "${crop.label} planted. Water the beds each day." else "That bed was taken just now."
+                }) { w -> (Gardening.plant(w, myId, garden.id, index, crop) as? GardenResult.Done)?.world }
+            }
+        }
+    }
+
+    /** Waters every bed that's still growing. Either of you can do it, once a day. */
+    fun water(garden: Room) {
+        selection = null
+        if (Gardening.water(world!!, myId, garden.id) == null) {
+            message = "Nothing needs water right now."
+            return
+        }
+        playOut(Gardening.watering) {
+            commit(onSaved = { applied -> message = if (applied) "Watered. They'll grow overnight." else "Already watered." }) { w ->
+                Gardening.water(w, myId, garden.id)
+            }
+        }
+    }
+
+    fun harvest(garden: Room, index: Int) {
+        selection = null
+        val crop = garden.beds.getOrNull(index)?.crop ?: return
+        if (Gardening.harvest(world!!, myId, garden.id, index) == null) return
+        playOut(Gardening.picking) {
+            commit(onSaved = { applied ->
+                message = if (applied) "+${crop.yield} ${crop.produce.label.lowercase()} in the chest." else "Someone picked it first."
+            }) { w -> Gardening.harvest(w, myId, garden.id, index) }
+        }
     }
 
     /** A fish reeled in: which one is decided here, from how cleanly it was reeled ([quality]). */

@@ -41,6 +41,7 @@ import com.ourlittlelife.game.ui.theme.OllTheme
 import com.ourlittlelife.game.ui.theme.OllType
 import com.ourlittlelife.rules.Plot
 import com.ourlittlelife.rules.PlotObject
+import com.ourlittlelife.rules.RoomKind
 import kotlin.math.ceil
 import kotlin.math.floor
 import kotlin.math.roundToInt
@@ -174,7 +175,16 @@ fun PlotCanvas(
 
         // Rooms: a plank floor inside a wooden wall, with the room's name in the corner.
         plot.rooms.forEach { room ->
-            room.tiles().forEach { (tx, ty) -> sprite(Sprites.floor, tx, ty) }
+            val garden = room.kind == RoomKind.GARDEN
+            room.tiles().forEach { (tx, ty) -> sprite(if (garden) Sprites.dirt else Sprites.floor, tx, ty) }
+            // A garden shows its beds: damp soil where it's been watered, and whatever is growing.
+            room.beds.forEachIndexed { i, bed ->
+                val (dx, dy) = Sprites.bedTile(i)
+                if (bed.watered) {
+                    drawRect(Sprites.wetSoil, topLeft = Offset(origin.x + (room.x + dx) * tile, origin.y + (room.y + dy) * tile), size = Size(tile, tile))
+                }
+                Sprites.crop(bed)?.let { sprite(it, room.x + dx, room.y + dy) }
+            }
             val wall = 4.dp.toPx()
             drawRect(
                 color = Sprites.wallColor,
