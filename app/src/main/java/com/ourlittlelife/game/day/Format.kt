@@ -23,7 +23,7 @@ fun formatDuration(minutes: Int): String {
     }
 }
 
-/** "1h · +45 Hunger, +5 Fun", gathering "1h · +6 Wood · -6 Energy", a recipe "1h · 10 Wood → 5 Planks · -4 Energy" */
+/** "1h · +45 Fullness, +5 Fun", gathering "1h · +6 Wood · -6 Energy", a recipe "1h · 10 Wood → 5 Planks · -4 Energy" */
 fun describe(action: Action): String {
     val made = action.yields.entries.joinToString(", ") { (resource, amount) -> "$amount ${resource.label}" }
     val yields = when {

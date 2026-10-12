@@ -2,10 +2,10 @@ package com.ourlittlelife.rules
 
 import kotlinx.serialization.Serializable
 
-/** The five needs every character has. */
+/** The five needs every character has. Higher is always better, so HUNGER shows as "Fullness": eating fills it up. */
 enum class Need(val label: String) {
     ENERGY("Energy"),
-    HUNGER("Hunger"),
+    HUNGER("Fullness"),
     FUN("Fun"),
     SOCIAL("Social"),
     HYGIENE("Hygiene"),
