@@ -6,6 +6,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.ourlittlelife.game.data.NeedsUpdate
 import com.ourlittlelife.game.data.WorldSource
 import com.ourlittlelife.game.day.describeShortfall
 import com.ourlittlelife.rules.Action
@@ -73,6 +74,13 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     val isSolo: Boolean get() = source.solo
 
     var world by mutableStateOf<World?>(null)
+        private set
+
+    /** The world as last confirmed saved. A change that fails to save is rolled back to this. */
+    private var confirmed: World? = null
+
+    /** True when a newer version of the game has saved this world; this phone needs the latest APK. */
+    var needsUpdate by mutableStateOf(false)
         private set
 
     /** True once the world has loaded and this player's character is in it. */
@@ -175,7 +183,10 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         myId = uid
         viewModelScope.launch {
             source.observe()
-                .catch { message = "Lost touch with your world. Check your connection." }
+                .catch { e ->
+                    if (e is NeedsUpdate) needsUpdate = true
+                    else message = "Lost touch with your world. Check your connection."
+                }
                 .collect(::onWorld)
         }
     }
@@ -184,6 +195,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         val before = world?.takeIf { ready }?.player(myId)
         val previousDay = before?.character?.clock?.day
         world = next
+        confirmed = next
         if (!ready) return
 
         // Someone greeted you since the last update.
@@ -255,9 +267,16 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                 val applied = AtomicBoolean(false)
                 val saved = source.update { w -> change(w).also { applied.set(it != null) } }
                 world = saved
+                confirmed = saved
                 onSaved(applied.get())
             } catch (e: Exception) {
-                message = "Couldn't save that. Check your connection and try again."
+                // Don't leave the screen showing something that never happened (like being asleep when you aren't).
+                confirmed?.let { last ->
+                    world = last
+                    if (walkJob?.isActive != true) last.players[myId]?.let { characterTile = it.tile }
+                }
+                if (e is NeedsUpdate) needsUpdate = true
+                else message = "Couldn't save that. Check your connection and try again."
             }
         }
     }

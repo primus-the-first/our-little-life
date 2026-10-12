@@ -36,7 +36,10 @@ data class Player(
     val tile: Pair<Int, Int> get() = tileX to tileY
 }
 
-/** The shared world two players keep together: one camp, up to two players, joined with [code]. */
+/**
+ * The shared world two players keep together: one camp, up to two players, joined with [code].
+ * [minVersion] is the newest app version that has saved it; older apps leave it alone.
+ */
 @Serializable
 data class World(
     val id: String,
@@ -44,6 +47,7 @@ data class World(
     val mode: Mode,
     val camp: Camp,
     val players: Map<String, Player>,
+    val minVersion: Int = 0,
 ) {
     val day: Int get() = players.values.maxOf { it.character.clock.day }
 

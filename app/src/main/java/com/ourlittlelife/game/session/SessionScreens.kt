@@ -140,8 +140,12 @@ fun LobbyScreen(
         if (hasWorlds) {
             state.worlds.forEach { world ->
                 SecondaryButton(
-                    text = world.partnerName?.let { "With $it" } ?: "Waiting for a friend",
-                    detail = if (world.partnerName != null) "${world.mode.label} · Day ${world.day}" else "Code ${world.code}",
+                    text = world.partnerName?.let { "With $it" } ?: if (world.needsUpdate) "World ${world.code}" else "Waiting for a friend",
+                    detail = when {
+                        world.needsUpdate -> "Needs the latest version"
+                        world.partnerName != null -> "${world.mode.label} · Day ${world.day}"
+                        else -> "Code ${world.code}"
+                    },
                     onClick = { onOpen(world.id) },
                     enabled = !state.busy,
                     modifier = Modifier.fillMaxWidth(),

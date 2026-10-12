@@ -267,6 +267,7 @@ private fun MapArea(viewModel: GameViewModel, focus: Pair<Int, Int>, modifier: M
         val lowest = Need.entries.minBy { character.needs[it] }
         val lowNeed = character.needs[lowest] < 30
         val note = when {
+            viewModel.needsUpdate -> "This world was saved by a newer version of the game. Install the latest APK to keep playing."
             viewModel.message != null -> viewModel.message
             room != null -> null
             viewModel.buildMode -> "Build mode: tap open ground to place a room."

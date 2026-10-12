@@ -1,8 +1,10 @@
 package com.ourlittlelife.game.data
 
+import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.FirebaseFirestoreException
+import com.ourlittlelife.game.BuildConfig
 import com.ourlittlelife.rules.JoinResult
 import com.ourlittlelife.rules.Mode
 import com.ourlittlelife.rules.SaveGame
@@ -18,25 +20,34 @@ import kotlinx.coroutines.tasks.await
  * Shared worlds in Firestore.
  *
  *   worlds/{worldId}  code, mode, members (up to two user ids), state (the whole World as JSON), updatedAt
+ *
+ * The state carries the newest app version that saved it (World.minVersion); older apps won't touch it.
  *   codes/{code}      worldId, so a friend can find the world from its invite code
  *
  * Every change runs the game rules inside a transaction on the latest saved state,
  * so two phones changing the world at the same moment never overwrite each other.
  */
+/** The world was saved by a newer version of the game than this one, so this phone mustn't read or write it. */
+class NeedsUpdate : Exception("This world needs a newer version of the game")
+
 class WorldStore(private val db: FirebaseFirestore = FirebaseFirestore.getInstance()) {
 
     private val worlds = db.collection("worlds")
     private val codes = db.collection("codes")
 
-    /** A world as the lobby shows it. */
-    data class Summary(val id: String, val code: String, val mode: Mode, val partnerName: String?, val day: Int)
+    /** A world as the lobby shows it. [needsUpdate] means a newer version of the game saved it. */
+    data class Summary(val id: String, val code: String, val mode: Mode, val partnerName: String?, val day: Int, val needsUpdate: Boolean = false)
 
     /** Every world this person belongs to, most recently played first. */
     suspend fun worldsFor(uid: String): List<Summary> =
         worlds.whereArrayContains("members", uid).get().await().documents
             .sortedByDescending { it.getTimestamp("updatedAt")?.seconds ?: 0 }
             .mapNotNull { doc ->
-                val world = doc.getString("state")?.let(Worlds::decode) ?: return@mapNotNull null
+                val world = runCatching { read(doc) }.getOrElse { e ->
+                    if (e !is NeedsUpdate) return@mapNotNull null
+                    val mode = runCatching { Mode.valueOf(doc.getString("mode") ?: "") }.getOrDefault(Mode.BESTIES)
+                    return@mapNotNull Summary(doc.id, doc.getString("code") ?: "", mode, null, 0, needsUpdate = true)
+                } ?: return@mapNotNull null
                 Summary(
                     id = doc.id,
                     code = world.code,
@@ -61,6 +72,7 @@ class WorldStore(private val db: FirebaseFirestore = FirebaseFirestore.getInstan
                 ),
             )
         }
+        world = world.copy(minVersion = BuildConfig.VERSION_CODE)
         ref.set(
             mapOf(
                 "code" to code,
@@ -112,7 +124,12 @@ class WorldStore(private val db: FirebaseFirestore = FirebaseFirestore.getInstan
                 close(error)
                 return@addSnapshotListener
             }
-            snapshot?.getString("state")?.let { trySend(Worlds.decode(it)) }
+            if (snapshot == null) return@addSnapshotListener
+            try {
+                read(snapshot)?.let { trySend(it) }
+            } catch (e: NeedsUpdate) {
+                close(e)
+            }
         }
         awaitClose { registration.remove() }
     }
@@ -125,12 +142,28 @@ class WorldStore(private val db: FirebaseFirestore = FirebaseFirestore.getInstan
     suspend fun update(worldId: String, change: (World) -> World?): World {
         val ref = worlds.document(worldId)
         return db.runTransaction { transaction ->
-            val current = Worlds.decode(transaction.get(ref).getString("state")!!)
-            val next = change(current)
+            val current = read(transaction.get(ref)) ?: throw NeedsUpdate()
+            // Once this version has saved the world, older versions stop touching it.
+            val next = change(current)?.let { it.copy(minVersion = maxOf(it.minVersion, BuildConfig.VERSION_CODE)) }
             if (next != null && next != current) {
                 transaction.update(ref, mapOf("state" to Worlds.encode(next), "updatedAt" to FieldValue.serverTimestamp()))
             }
             next ?: current
         }.await()
+    }
+
+    /**
+     * The world in [doc], or null if there's none. Throws [NeedsUpdate] if a newer version of the game
+     * saved it, or if it can't be read at all (which in practice means the same thing).
+     */
+    private fun read(doc: DocumentSnapshot): World? {
+        val state = doc.getString("state") ?: return null
+        val world = try {
+            Worlds.decode(state)
+        } catch (e: Exception) {
+            throw NeedsUpdate()
+        }
+        if (world.minVersion > BuildConfig.VERSION_CODE) throw NeedsUpdate()
+        return world
     }
 }
