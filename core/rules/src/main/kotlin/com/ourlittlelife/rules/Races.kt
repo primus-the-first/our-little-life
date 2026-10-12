@@ -20,7 +20,7 @@ data class RaceOutcome(
  */
 object Races {
 
-    val lap = Action("race_lap", "Run a lap", 30, mapOf(FUN to 15, ENERGY to -10))
+    val lap = Action("race_lap", "Run a lap", 5, mapOf(FUN to 15, ENERGY to -10))
 
     /** Coins for a new personal best, paid into the shared chest. */
     const val BEST_PRIZE = 20

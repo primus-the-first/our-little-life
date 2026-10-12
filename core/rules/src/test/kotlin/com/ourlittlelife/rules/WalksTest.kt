@@ -53,13 +53,13 @@ class WalksTest {
     }
 
     @Test
-    fun `saying yes walks you both for an hour, with fun and social for each`() {
+    fun `saying yes walks you both round the loop, with fun and social for each`() {
         val walked = assertNotNull(Walks.accept(assertNotNull(Walks.invite(world, "jo")), "maya"))
         listOf("jo", "maya").forEach { id ->
             val p = walked.player(id)
-            assertEquals(Rules.DAY_START + 60, p.character.clock.minute, id)
-            assertEquals(50 - 3 + 12, p.character.needs[Need.FUN], id)
-            assertEquals(50 - 2 + Walks.TOGETHER_SOCIAL, p.character.needs[Need.SOCIAL], id)
+            assertEquals(Rules.DAY_START + Walks.together.minutes, p.character.clock.minute, id)
+            assertEquals(50 + Rules.decay(Walks.together.minutes).getValue(Need.FUN) + 12, p.character.needs[Need.FUN], id)
+            assertEquals(50 + Rules.decay(Walks.together.minutes).getValue(Need.SOCIAL) + Walks.TOGETHER_SOCIAL, p.character.needs[Need.SOCIAL], id)
             assertNull(p.activity, id)
         }
         assertEquals(Walks.END, walked.player("maya").tile)
@@ -70,8 +70,8 @@ class WalksTest {
     fun `saying yes needs an open invite, and late at night is fine`() {
         assertNull(Walks.accept(world, "maya"))
         val asked = assertNotNull(Walks.invite(world, "jo"))
-        val late = asked.withPlayer(asked.player("jo").let { it.copy(character = it.character.copy(clock = Clock(1, Rules.DAY_END - 30))) })
-        assertEquals(Rules.DAY_END, assertNotNull(Walks.accept(late, "maya")).player("jo").character.clock.minute)
+        val late = asked.withPlayer(asked.player("jo").let { it.copy(character = it.character.copy(clock = Clock(1, Rules.BEDTIME))) })
+        assertEquals(Rules.BEDTIME + Walks.together.minutes, assertNotNull(Walks.accept(late, "maya")).player("jo").character.clock.minute)
     }
 
     @Test
@@ -92,7 +92,7 @@ class WalksTest {
     fun `walking alone is fun but not social`() {
         val jo = world.player("jo").character
         val done = assertIs<ActionResult.Done>(Rules.perform(jo, Walks.alone)).character
-        assertEquals(50 - 3 + 12, done.needs[Need.FUN])
-        assertEquals(50 - 2, done.needs[Need.SOCIAL])
+        assertEquals(50 + Rules.decay(Walks.alone.minutes).getValue(Need.FUN) + 12, done.needs[Need.FUN])
+        assertEquals(50 + Rules.decay(Walks.alone.minutes).getValue(Need.SOCIAL), done.needs[Need.SOCIAL])
     }
 }

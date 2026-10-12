@@ -13,8 +13,8 @@ object Walks {
     /** Social for walking the loop together. */
     const val TOGETHER_SOCIAL = 25
 
-    val alone = Action("walk_trail", "Walk the trail", 60, mapOf(FUN to 12, ENERGY to -4))
-    val together = Action("walk_together", "Walk together", 60, mapOf(FUN to 12, SOCIAL to TOGETHER_SOCIAL, ENERGY to -4))
+    val alone = Action("walk_trail", "Walk the trail", 45, mapOf(FUN to 12, ENERGY to -4))
+    val together = Action("walk_together", "Walk together", 45, mapOf(FUN to 12, SOCIAL to TOGETHER_SOCIAL, ENERGY to -4))
 
     /** Where a walk finishes: back at the trailhead, on the path out of the yard. */
     val END = 31 to 45

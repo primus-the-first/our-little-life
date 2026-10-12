@@ -97,6 +97,18 @@ object Worlds {
         return JoinResult.Joined(world.withPlayer(Player(playerId, character, x, y)))
     }
 
+    /**
+     * Time passing for one player while they play. If their energy runs out, they fall asleep where
+     * they stand, and if everyone is then asleep, the next morning comes.
+     */
+    fun passTime(world: World, playerId: String, minutes: Int, now: Long): World {
+        val player = world.player(playerId)
+        if (player.character.asleep) return world
+        val later = world.withPlayer(player.copy(character = Rules.passTime(player.character, minutes)))
+        if (later.player(playerId).character.needs[Need.ENERGY] > 0) return later
+        return advanceIfReady(sleep(later, playerId, now))
+    }
+
     fun sleep(world: World, playerId: String, now: Long): World {
         val player = world.player(playerId)
         return world.withPlayer(player.copy(character = Rules.sleep(player.character), sleptAt = now))

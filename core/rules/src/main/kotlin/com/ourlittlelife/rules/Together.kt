@@ -34,8 +34,8 @@ object Together {
 
     private fun steps(a: Pair<Int, Int>, b: Pair<Int, Int>): Int = abs(a.first - b.first) + abs(a.second - b.second)
 
-    val stories = Action("fire_stories", "Tell stories by the fire", 60, mapOf(FUN to 10))
-    val picnic = Action("picnic", "Have a picnic", 90, mapOf(HUNGER to 30, FUN to 10))
+    val stories = Action("fire_stories", "Tell stories by the fire", 45, mapOf(FUN to 10))
+    val picnic = Action("picnic", "Have a picnic", 60, mapOf(HUNGER to 30, FUN to 10))
 
     /** Extra social for doing these with your partner awake and close by. */
     val companyBonus: Map<Action, Int> = mapOf(stories to 20, picnic to 25, Outdoors.sit to 10)

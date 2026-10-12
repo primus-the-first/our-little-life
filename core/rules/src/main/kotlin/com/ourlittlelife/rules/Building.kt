@@ -51,7 +51,7 @@ sealed interface BuildResult {
 
 object Building {
 
-    val napInBed = Action("nap_bed", "Nap in the bed", 120, mapOf(ENERGY to 40))
+    val napInBed = Action("nap_bed", "Nap in the bed", 90, mapOf(ENERGY to 40))
 
     /** Building a room is a long day's work. */
     fun actionFor(kind: RoomKind): Action =

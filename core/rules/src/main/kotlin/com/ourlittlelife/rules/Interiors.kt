@@ -79,12 +79,12 @@ data class Inside(val roomId: String, val x: Int, val y: Int) {
 
 /** What each piece of furniture offers when tapped. Decor is just for looks. */
 object FurnitureActions {
-    val sit = Action("sit_chair", "Sit down", 15, mapOf(ENERGY to 3, FUN to 2))
+    val sit = Action("sit_chair", "Sit down", 10, mapOf(ENERGY to 3, FUN to 2))
     val sitTogether = Action("sit_sofa", "Sit on the sofa", 30, mapOf(ENERGY to 4, FUN to 8))
-    val meal = Action("meal_table", "Have a meal", 45, mapOf(HUNGER to 35, FUN to 3))
-    val cook = Action("cook_stove", "Cook a proper meal", 60, mapOf(HUNGER to 60, FUN to 5))
-    val wash = Action("wash_stand", "Wash up", 30, mapOf(HYGIENE to 40))
-    val read = Action("read_book", "Read a book", 60, mapOf(FUN to 15))
+    val meal = Action("meal_table", "Have a meal", 30, mapOf(HUNGER to 35, FUN to 3))
+    val cook = Action("cook_stove", "Cook a proper meal", 45, mapOf(HUNGER to 60, FUN to 5))
+    val wash = Action("wash_stand", "Wash up", 15, mapOf(HYGIENE to 40))
+    val read = Action("read_book", "Read a book", 45, mapOf(FUN to 15))
 
     fun forKind(kind: FurnitureKind): List<Action> = when (kind) {
         FurnitureKind.BED -> listOf(Building.napInBed)

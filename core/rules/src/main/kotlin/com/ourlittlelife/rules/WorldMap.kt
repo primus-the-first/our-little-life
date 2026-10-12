@@ -26,7 +26,7 @@ enum class Terrain(val blocks: Boolean = false) {
 
 /** Things to do out in the wider world. */
 object Outdoors {
-    val sit = Action("sit_bench", "Sit a while", 30, mapOf(FUN to 8, ENERGY to 4))
+    val sit = Action("sit_bench", "Sit a while", 20, mapOf(FUN to 8, ENERGY to 4))
 }
 
 /**

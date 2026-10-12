@@ -16,6 +16,7 @@ import com.ourlittlelife.rules.BuildResult
 import com.ourlittlelife.rules.Building
 import com.ourlittlelife.rules.Camp
 import com.ourlittlelife.rules.Character
+import com.ourlittlelife.rules.Clock
 import com.ourlittlelife.rules.Furniture
 import com.ourlittlelife.rules.Gesture
 import com.ourlittlelife.rules.FurnitureActions
@@ -47,6 +48,9 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.launch
+
+/** Something your character is in the middle of, playing out minute by minute. [onDone] lands it. */
+data class Busy(val label: String, val minutes: Int, val elapsed: Float = 0f, val hurry: Boolean = false, val onDone: () -> Unit)
 
 /** A piece of furniture in hand while furnishing: a new one to buy or make, or one being [moving]. */
 data class Holding(val kind: FurnitureKind, val x: Int, val y: Int, val moving: String? = null)
@@ -139,6 +143,20 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
 
     /** Your partner, if they're inside the same room as you. */
     val partnerInHere: Player? get() = partner?.takeIf { it.inside != null && it.inside?.roomId == me.inside?.roomId }
+
+    /** Idle game minutes that have passed on screen but aren't saved yet. Saved every [SAVE_EVERY_MINUTES]. */
+    private var pendingMinutes by mutableStateOf(0)
+
+    /** What you're doing right now, if anything, and how far along it is. */
+    var busy by mutableStateOf<Busy?>(null)
+        private set
+
+    /** The clock as it reads on screen: the saved time plus whatever has passed since. */
+    val shownClock: Clock
+        get() {
+            val saved = character.clock
+            return saved.copy(minute = saved.minute + pendingMinutes + (busy?.elapsed?.toInt() ?: 0))
+        }
 
     /** True while the furniture tray is open inside a room. */
     var furnishing by mutableStateOf(false)
@@ -259,6 +277,11 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
      * The saved result replaces the local guess, so a change that no longer applies quietly disappears.
      */
     private fun commit(onSaved: (applied: Boolean) -> Unit = {}, change: (World) -> World?) {
+        saveIdleTime()
+        save(onSaved, change)
+    }
+
+    private fun save(onSaved: (applied: Boolean) -> Unit = {}, change: (World) -> World?) {
         val local = world ?: return
         change(local)?.let { world = it }
         viewModelScope.launch {
@@ -301,6 +324,10 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     /** Taps: things open their actions; open ground and room floors are walked to (or built on, in build mode). */
     fun tapTile(x: Int, y: Int) {
         if (!ready || x !in 0 until plot.size || y !in 0 until plot.size) return
+        if (busy != null) {
+            stopBusy()
+            return
+        }
         val thing = plot.objectAt(x, y)
         val room = plot.roomAt(x, y)
         val tapped = x to y
@@ -387,6 +414,10 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     /** Taps inside: people open their card, furniture opens what it offers, the floor is walked to. */
     fun tapInside(x: Int, y: Int) {
         val room = insideRoom ?: return
+        if (busy != null) {
+            stopBusy()
+            return
+        }
         val tapped = x to y
         val piece = Interiors.furnitureAt(room, x, y)
         // While furnishing, a tap moves the piece in hand there, or picks up a piece to move or put away.
@@ -433,9 +464,11 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         val spot = Interiors.spotBeside(room, piece, insideTile, setOfNotNull(partnerInHere?.inside?.tile)) ?: insideTile
         val company = piece.kind in FurnitureActions.shared && partnerInHere?.character?.asleep == false
         walkInside(room, spot) {
-            commit(onSaved = { applied ->
-                if (applied && company) message = "Nicer with ${partnerName ?: "company"}. +${Interiors.COMPANY_SOCIAL} social."
-            }) { w -> Interiors.use(Interiors.moveTo(w, myId, spot), myId, piece.id, action) }
+            playOut(action) {
+                commit(onSaved = { applied ->
+                    if (applied && company) message = "Nicer with ${partnerName ?: "company"}. +${Interiors.COMPANY_SOCIAL} social."
+                }) { w -> Interiors.use(Interiors.moveTo(w, myId, spot), myId, piece.id, action) }
+            }
         }
     }
 
@@ -546,11 +579,13 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                     walkTo(spot, saveOnArrival = true) { racing = true }
                     return
                 }
-                walkTo(spot, saveOnArrival = false) {
-                    val here = world!!.let { w -> w.withPlayer(w.player(myId).copy(tileX = spot.first, tileY = spot.second)) }
-                    val bonus = Together.companyBonus[action]?.takeIf { Together.hasCompany(here, here.player(myId)) }
-                    commit(onSaved = { applied -> reportUse(applied, obj, action, bonus) }) { w ->
-                        Together.use(w.withPlayer(w.player(myId).copy(tileX = spot.first, tileY = spot.second)), myId, obj, action)
+                walkTo(spot, saveOnArrival = true) {
+                    playOut(action) {
+                        val here = world!!.let { w -> w.withPlayer(w.player(myId).copy(tileX = spot.first, tileY = spot.second)) }
+                        val bonus = Together.companyBonus[action]?.takeIf { Together.hasCompany(here, here.player(myId)) }
+                        commit(onSaved = { applied -> reportUse(applied, obj, action, bonus) }) { w ->
+                            Together.use(w.withPlayer(w.player(myId).copy(tileX = spot.first, tileY = spot.second)), myId, obj, action)
+                        }
                     }
                 }
             }
@@ -580,6 +615,10 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             message = refusal(check.reason)
             return
         }
+        playOut(action) { saveRoomUse(room, action) }
+    }
+
+    private fun saveRoomUse(room: Room, action: Action) {
         commit { w ->
             val p = w.player(myId)
             when (val fresh = w.camp.useRoom(p.character, room, action)) {
@@ -613,6 +652,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     fun sleep() {
         selection = null
         walkJob?.cancel()
+        busy = null
         val now = System.currentTimeMillis()
         val name = partnerName
         message = if (name != null) "Sleep well. The day starts when $name goes to bed too." else null
@@ -733,6 +773,56 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /**
+     * One real second: one game minute passes, like The Sims. While you're busy it counts towards
+     * what you're doing (faster when hurrying); otherwise it's idle time, saved every so often.
+     */
+    fun tick() {
+        if (!ready || character.asleep || stargazing || racing || touring) return
+        val doing = busy
+        if (doing != null) {
+            val next = doing.copy(elapsed = doing.elapsed + if (doing.hurry) HURRY_SPEED else 1f)
+            if (next.elapsed >= next.minutes) {
+                busy = null
+                next.onDone()
+            } else {
+                busy = next
+            }
+            return
+        }
+        pendingMinutes++
+        if (pendingMinutes >= SAVE_EVERY_MINUTES) saveIdleTime()
+    }
+
+    /** Saves the idle time that has passed. If you've run out of energy, you fall asleep where you stand. */
+    private fun saveIdleTime() {
+        val minutes = pendingMinutes
+        if (minutes <= 0 || !ready) return
+        pendingMinutes = 0
+        val wasAwake = !character.asleep
+        save(onSaved = {
+            if (wasAwake && ready && me.character.asleep) message = "So tired you fell asleep where you stood."
+        }) { w -> Worlds.passTime(w, myId, minutes, System.currentTimeMillis()) }
+    }
+
+    /** Plays [action] out minute by minute, then runs [onDone]. Long things (work, building) happen in one go. */
+    private fun playOut(action: Action, onDone: () -> Unit) {
+        if (action.minutes > PLAY_OUT_MAX_MINUTES) onDone() else busy = Busy(action.name, action.minutes, onDone = onDone)
+    }
+
+    /** Speeds up what you're doing. */
+    fun hurry() {
+        busy = busy?.copy(hurry = true)
+    }
+
+    /** Stops what you're doing. The time spent so far still passes; the action doesn't happen. */
+    fun stopBusy() {
+        val doing = busy ?: return
+        busy = null
+        pendingMinutes += doing.elapsed.toInt()
+        message = "Stopped."
+    }
+
     fun clearMessage() {
         message = null
     }
@@ -746,6 +836,15 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     @Suppress("UNUSED_PARAMETER")
     private fun refusal(reason: ActionResult): String = "You're asleep. The day starts when everyone has gone to bed."
 }
+
+/** Idle game minutes between saves: about every quarter of a game hour. */
+private const val SAVE_EVERY_MINUTES = 15
+
+/** Actions up to this long play out on screen; longer ones (work, building) happen in one go. */
+private const val PLAY_OUT_MAX_MINUTES = 90
+
+/** How much faster an action plays out when you hurry it. */
+private const val HURRY_SPEED = 5f
 
 /** How long each step takes. The canvas glides a character across a tile in exactly this time. */
 const val WALK_STEP_MILLIS = 140L

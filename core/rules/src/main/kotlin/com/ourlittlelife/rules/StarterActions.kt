@@ -7,14 +7,15 @@ import com.ourlittlelife.rules.Need.HYGIENE
 import com.ourlittlelife.rules.Need.SOCIAL
 
 /**
- * The camp actions available on day 1, before anything is built.
+ * The camp actions available on day 1, before anything is built. Lengths are believable, like
+ * The Sims: a snack is ten minutes, a shift at work is eight hours.
  * These move to JSON under content/ in Phase 4.
  */
 object StarterActions {
-    val snack = Action("snack", "Eat a snack", 30, mapOf(HUNGER to 20))
-    val cook = Action("cook_campfire", "Cook at the campfire", 60, mapOf(HUNGER to 45, FUN to 5))
-    val wash = Action("wash_basin", "Wash at the basin", 30, mapOf(HYGIENE to 40))
-    val nap = Action("nap_tent", "Nap in the tent", 120, mapOf(ENERGY to 25))
+    val snack = Action("snack", "Eat a snack", 10, mapOf(HUNGER to 20))
+    val cook = Action("cook_campfire", "Cook at the campfire", 45, mapOf(HUNGER to 45, FUN to 5))
+    val wash = Action("wash_basin", "Wash at the basin", 15, mapOf(HYGIENE to 40))
+    val nap = Action("nap_tent", "Nap in the tent", 60, mapOf(ENERGY to 25))
     val stargaze = Action("stargaze", "Look at the stars", 60, mapOf(FUN to 20))
     /** Coins for a day at work, paid into the shared chest. */
     const val WAGE = 80

@@ -21,11 +21,11 @@ class RefiningTest {
     }
 
     @Test
-    fun `sawing turns 10 wood into 5 planks in an hour`() {
+    fun `sawing turns 10 wood into 5 planks in half an hour`() {
         val result = campWith(Resource.WOOD to 12).done(Refining.sawPlanks)
         assertEquals(2, result.camp.storage[Resource.WOOD])
         assertEquals(5, result.camp.storage[Resource.PLANKS])
-        assertEquals(Rules.DAY_START + 60, result.character.clock.minute)
+        assertEquals(Rules.DAY_START + Refining.sawPlanks.minutes, result.character.clock.minute)
     }
 
     @Test

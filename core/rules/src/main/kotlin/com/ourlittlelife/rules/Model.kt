@@ -31,11 +31,12 @@ data class Needs(private val levels: Map<Need, Int>) {
     }
 }
 
-/** In-game time. Day 1 is a Monday; waking hours run from 7am to 11pm. */
+/** In-game time. Day 1 is a Monday. Mornings start at 7am; [minute] keeps counting past midnight until you sleep. */
 @Serializable
 data class Clock(val day: Int, val minute: Int) {
 
-    val minutesLeft: Int get() = (Rules.DAY_END - minute).coerceAtLeast(0)
+    /** Past bedtime: the clock doesn't stop, but it's time to think about sleep. */
+    val late: Boolean get() = minute >= Rules.BEDTIME
 
     val weekday: String get() = WEEKDAYS[(day - 1) % 7]
 

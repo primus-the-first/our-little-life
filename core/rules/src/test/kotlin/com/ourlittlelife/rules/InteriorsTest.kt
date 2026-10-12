@@ -91,6 +91,6 @@ class InteriorsTest {
         val bed = cabin.furniture.single()
         assertEquals(listOf(Building.napInBed), FurnitureActions.forKind(FurnitureKind.BED))
         val done = assertIs<UseResult.Done>(world.camp.useFurniture(jo, cabin, bed, Building.napInBed))
-        assertEquals(Rules.DAY_START + 120, done.character.clock.minute)
+        assertEquals(Rules.DAY_START + Building.napInBed.minutes, done.character.clock.minute)
     }
 }

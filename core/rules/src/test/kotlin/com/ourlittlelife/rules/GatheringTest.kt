@@ -19,10 +19,10 @@ class GatheringTest {
         assertIs<UseResult.Done>(use(character, obj, action))
 
     @Test
-    fun `chopping a tree puts wood in the chest and takes an hour`() {
+    fun `chopping a tree puts wood in the chest and takes half an hour`() {
         val result = camp.done(jo, tree, Gathering.chop)
         assertEquals(6, result.camp.storage[Resource.WOOD])
-        assertEquals(Rules.DAY_START + 60, result.character.clock.minute)
+        assertEquals(Rules.DAY_START + Gathering.chop.minutes, result.character.clock.minute)
     }
 
     @Test

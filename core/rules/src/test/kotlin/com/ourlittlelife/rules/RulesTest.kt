@@ -19,18 +19,18 @@ class RulesTest {
         assertIs<ActionResult.Done>(Rules.perform(this, action)).character
 
     @Test
-    fun `a new character starts day 1 at 7am with full needs and 16 hours`() {
+    fun `a new character starts day 1 at 7am with full needs`() {
         val jo = Character("Jo")
         assertEquals(1, jo.clock.day)
         assertEquals("Monday", jo.clock.weekday)
-        assertEquals(16 * 60, jo.clock.minutesLeft)
+        assertEquals(Rules.DAY_START, jo.clock.minute)
         Need.entries.forEach { assertEquals(100, jo.needs[it]) }
     }
 
     @Test
     fun `an action spends its minutes`() {
         val jo = Character("Jo").doing(StarterActions.wash)
-        assertEquals(Rules.DAY_START + 30, jo.clock.minute)
+        assertEquals(Rules.DAY_START + StarterActions.wash.minutes, jo.clock.minute)
     }
 
     @Test
@@ -46,7 +46,7 @@ class RulesTest {
     @Test
     fun `effects are added after the drop and capped at 100`() {
         val hungry = Character("Jo", needs = Needs.full().plus(mapOf(HUNGER to -50)))
-        assertEquals(67, hungry.doing(StarterActions.snack).needs[HUNGER]) // 50 - 3 + 20
+        assertEquals(69, hungry.doing(StarterActions.snack).needs[HUNGER]) // 50 - 1 (ten minutes) + 20
 
         val full = Character("Jo").doing(StarterActions.snack)
         assertEquals(100, full.needs[HUNGER])
@@ -60,12 +60,11 @@ class RulesTest {
     }
 
     @Test
-    fun `late at night you can still do things, and the clock stops at 11pm`() {
-        val late = Character("Jo", clock = Clock(1, Rules.DAY_END - 20))
+    fun `late at night you can still do things, and it counts as late`() {
+        val late = Character("Jo", clock = Clock(1, Rules.BEDTIME - 10))
         val done = assertIs<ActionResult.Done>(Rules.perform(late, StarterActions.wash)).character
-        assertEquals(Rules.DAY_END, done.clock.minute)
-        val again = assertIs<ActionResult.Done>(Rules.perform(done, StarterActions.wash)).character
-        assertEquals(Rules.DAY_END, again.clock.minute)
+        assertEquals(Rules.BEDTIME + StarterActions.wash.minutes - 10, done.clock.minute)
+        assertTrue(done.clock.late)
     }
 
     @Test

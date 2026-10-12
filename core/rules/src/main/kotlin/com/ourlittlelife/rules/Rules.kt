@@ -8,13 +8,16 @@ import com.ourlittlelife.rules.Need.SOCIAL
 import kotlin.math.roundToInt
 
 /**
- * The daily turn: spend waking hours on actions, go to sleep, and the world moves on
- * once both characters are asleep. All numbers are starting values to tune in playtesting.
+ * The day, the way The Sims does it: the clock runs while you play and needs drop as it goes,
+ * actions take believable amounts of time, and the night has no hard stop. Run out of energy and
+ * you fall asleep; once everyone is asleep, the next morning comes. Numbers are starting values.
  */
 object Rules {
 
     const val DAY_START = 7 * 60
-    const val DAY_END = 23 * 60
+
+    /** "Late": the clock keeps going after this, but the day button starts to nudge you to bed. */
+    const val BEDTIME = 23 * 60
 
     /** How much each need drops per waking hour. */
     val decayPerHour: Map<Need, Int> = mapOf(
@@ -35,18 +38,27 @@ object Rules {
     fun decay(minutes: Int): Map<Need, Int> =
         decayPerHour.mapValues { (_, perHour) -> -(perHour * minutes / 60.0).roundToInt() }
 
-    /**
-     * Does [action]. Time never stops you: the clock moves on but stops at 11pm, and the
-     * action still wears on your needs, so tiredness and hunger are what end a day.
-     */
+    /** Does [action]: its time passes, needs drop for that time, and its effects land. */
     fun perform(character: Character, action: Action): ActionResult {
         if (character.asleep) return ActionResult.Asleep
         val changes = sum(decay(action.minutes), action.effects)
         return ActionResult.Done(
             character.copy(
                 needs = character.needs.plus(changes),
-                clock = character.clock.copy(minute = (character.clock.minute + action.minutes).coerceAtMost(DAY_END)),
+                clock = character.clock.copy(minute = character.clock.minute + action.minutes),
             ),
+        )
+    }
+
+    /**
+     * Time passing while you're up and about but not doing anything in particular. The clock runs
+     * on past midnight (still the same day until you sleep); needs drop as it goes.
+     */
+    fun passTime(character: Character, minutes: Int): Character {
+        if (character.asleep || minutes <= 0) return character
+        return character.copy(
+            needs = character.needs.plus(decay(minutes)),
+            clock = character.clock.copy(minute = character.clock.minute + minutes),
         )
     }
 

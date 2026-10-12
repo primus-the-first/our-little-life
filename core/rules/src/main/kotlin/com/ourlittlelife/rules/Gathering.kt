@@ -5,9 +5,9 @@ import kotlinx.serialization.Serializable
 
 /** Gathering wood, stone and fiber. Each spot gives a few times a day and grows back overnight. */
 object Gathering {
-    val chop = Action("chop_wood", "Chop wood", 60, mapOf(ENERGY to -6), mapOf(Resource.WOOD to 6))
-    val breakRock = Action("break_rock", "Break the rock", 60, mapOf(ENERGY to -8), mapOf(Resource.STONE to 4))
-    val pickFiber = Action("pick_fiber", "Pick fiber", 30, mapOf(ENERGY to -2), mapOf(Resource.FIBER to 5))
+    val chop = Action("chop_wood", "Chop wood", 30, mapOf(ENERGY to -6), mapOf(Resource.WOOD to 6))
+    val breakRock = Action("break_rock", "Break the rock", 30, mapOf(ENERGY to -8), mapOf(Resource.STONE to 4))
+    val pickFiber = Action("pick_fiber", "Pick fiber", 15, mapOf(ENERGY to -2), mapOf(Resource.FIBER to 5))
 
     /** How many times a day each kind of spot can be gathered from. */
     fun usesPerDay(kind: ObjectKind): Int = when (kind) {

@@ -35,12 +35,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.repeatOnLifecycle
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import com.ourlittlelife.game.day.describe
 import com.ourlittlelife.game.day.describeShortfall
 import com.ourlittlelife.game.day.formatDuration
@@ -77,7 +81,18 @@ import kotlinx.coroutines.delay
 fun HomeScreen(viewModel: GameViewModel = viewModel(), onBackToLobby: () -> Unit = {}) {
     val colors = OllTheme.colors
     val character = viewModel.character
-    val clock = character.clock
+    val clock = viewModel.shownClock
+
+    // The clock runs while the game is on screen: one game minute every real second, like The Sims.
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    LaunchedEffect(viewModel, lifecycle) {
+        lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            while (true) {
+                delay(1000)
+                viewModel.tick()
+            }
+        }
+    }
     var needsOpen by remember { mutableStateOf(false) }
 
     // Notices sit over the bottom of the map, so they fade out on their own instead of blocking taps.
@@ -275,7 +290,10 @@ private fun MapArea(viewModel: GameViewModel, focus: Pair<Int, Int>, modifier: M
             else -> null
         }
         val inviter = viewModel.walkInviteFrom
-        if (inviter != null && !viewModel.touring) {
+        val doing = viewModel.busy
+        if (doing != null) {
+            BusyCard(doing, onHurry = viewModel::hurry, onStop = viewModel::stopBusy, modifier = Modifier.align(Alignment.TopCenter).padding(12.dp))
+        } else if (inviter != null && !viewModel.touring) {
             WalkCard(
                 text = "${inviter.character.name} wants to go for a walk in the forest.",
                 yes = "Go for a walk" to viewModel::acceptWalk,
@@ -360,7 +378,7 @@ private fun DayButton(viewModel: GameViewModel) {
     } else {
         PrimaryButton(
             text = "Go to bed",
-            detail = if (clock.minutesLeft > 0) "${formatDuration(clock.minutesLeft)} unused" else null,
+            detail = if (clock.late) "It's late" else null,
             onClick = viewModel::sleep,
             modifier = Modifier.fillMaxWidth(),
         )
@@ -403,7 +421,7 @@ private fun HudContent(clock: Clock, name: String, mood: Int, onOpenNeeds: () ->
             modifier = Modifier.semantics { heading() },
         )
         Text(
-            if (clock.minutesLeft > 0) "${formatTime(clock.minute)} · ${formatDuration(clock.minutesLeft)} left" else "${formatTime(clock.minute)} · Late night",
+            if (clock.late) "${formatTime(clock.minute)} · Late" else formatTime(clock.minute),
             style = OllType.stat,
             color = colors.inkMuted,
         )
@@ -495,6 +513,45 @@ private fun Notice(text: String, low: Boolean, modifier: Modifier = Modifier) {
             Text("LOW", style = OllType.tag, color = colors.berry)
         }
         Text(text, style = OllType.body, color = colors.ink)
+    }
+}
+
+/** What you're in the middle of, how far along, and a way to hurry it or stop. */
+@Composable
+private fun BusyCard(busy: Busy, onHurry: () -> Unit, onStop: () -> Unit, modifier: Modifier = Modifier) {
+    val colors = OllTheme.colors
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(colors.surfaceRaised)
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text(busy.label, style = OllType.heading, color = colors.ink)
+            Text("${busy.elapsed.toInt()} of ${busy.minutes} min", style = OllType.caption, color = colors.inkMuted)
+        }
+        val done = (busy.elapsed / busy.minutes).coerceIn(0f, 1f)
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(10.dp)
+                .clip(RoundedCornerShape(5.dp))
+                .background(colors.surfaceSunken)
+                .semantics { contentDescription = "${(done * 100).toInt()} percent done" },
+        ) {
+            Box(
+                Modifier
+                    .fillMaxWidth(done)
+                    .fillMaxHeight()
+                    .background(colors.leaf),
+            )
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            SecondaryButton(text = if (busy.hurry) "Hurrying" else "Hurry", enabled = !busy.hurry, onClick = onHurry, modifier = Modifier.weight(1f))
+            SecondaryButton(text = "Stop", onClick = onStop, modifier = Modifier.weight(1f))
+        }
     }
 }
 
