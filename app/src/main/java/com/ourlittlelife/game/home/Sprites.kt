@@ -66,6 +66,7 @@ object Sprites {
         ObjectKind.BENCH -> single(Sprite(Sheet.OUTDOOR, 23, 4))
         ObjectKind.RACE_SIGN -> single(Sprite(Sheet.OUTDOOR, 20, 0))
         ObjectKind.TRAILHEAD -> single(Sprite(Sheet.OUTDOOR, 21, 0))
+        ObjectKind.FISHING_SPOT -> single(Sprite(Sheet.OUTDOOR, 16, 0))
     }
 
     private val path = Sprite(Sheet.OUTDOOR, 8, 0)

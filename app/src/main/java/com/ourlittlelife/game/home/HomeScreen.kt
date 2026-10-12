@@ -191,6 +191,20 @@ fun HomeScreen(viewModel: GameViewModel = viewModel(), onBackToLobby: () -> Unit
         }
     }
 
+    if (viewModel.fishing) {
+        Dialog(
+            onDismissRequest = viewModel::closeFishing,
+            properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
+        ) {
+            FishingPond(
+                log = viewModel.myFishLog,
+                onLand = viewModel::landFish,
+                onMiss = viewModel::missFish,
+                onClose = viewModel::closeFishing,
+            )
+        }
+    }
+
     if (viewModel.racing) {
         val other = viewModel.partner
         Dialog(
@@ -749,9 +763,11 @@ private fun PieceSheet(selection: Selection.Piece, viewModel: GameViewModel, asl
             } else {
                 if (piece.kind == FurnitureKind.BED) SleepHereButton(viewModel)
                 viewModel.actionsFor(piece).forEach { action ->
+                    val short = viewModel.camp.storage.shortfall(action.costs)
                     SecondaryButton(
                         text = action.name,
-                        detail = describe(action),
+                        detail = if (short.isEmpty()) describe(action) else describeShortfall(short),
+                        enabled = short.isEmpty(),
                         onClick = { viewModel.perform(selection.room, piece, action) },
                         modifier = Modifier.fillMaxWidth(),
                     )

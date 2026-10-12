@@ -127,6 +127,7 @@ object WorldMap {
         place(ObjectKind.BENCH, 31, 6)
         place(ObjectKind.RACE_SIGN, 46, 30)
         place(ObjectKind.TRAILHEAD, 32, 45)
+        place(ObjectKind.FISHING_SPOT, 13, 25)
 
         // The forest around the trail, in loose rows with gaps to walk between.
         for (x in 2..42 step 3) for (y in 46..62 step 3) place(ObjectKind.TREE, x + (x * 7 + y * 3) % 2, y)

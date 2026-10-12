@@ -92,8 +92,10 @@ data class Camp(
     fun useFurniture(character: Character, room: Room, piece: Furniture, action: Action): UseResult {
         require(piece in room.furniture) { "${piece.kind.label} isn't in the ${room.kind.label}" }
         require(action in FurnitureActions.forKind(piece.kind)) { "${piece.kind.label} doesn't offer ${action.name}" }
+        val short = storage.shortfall(action.costs)
+        if (short.isNotEmpty()) return UseResult.Missing(short)
         return when (val result = Rules.perform(character, action)) {
-            is ActionResult.Done -> UseResult.Done(result.character, this)
+            is ActionResult.Done -> UseResult.Done(result.character, copy(storage = storage.minus(action.costs).plus(action.yields)))
             else -> UseResult.Refused(result)
         }
     }

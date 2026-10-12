@@ -16,6 +16,7 @@ enum class ObjectKind(val label: String, val width: Int = 1, val height: Int = 1
     BENCH("Bench on the hill"),
     RACE_SIGN("Racecourse"),
     TRAILHEAD("Forest trail"),
+    FISHING_SPOT("Fishing spot"),
 }
 
 @Serializable
@@ -84,7 +85,7 @@ object StarterPlot {
 object ObjectActions {
     fun forKind(kind: ObjectKind): List<Action> = when (kind) {
         ObjectKind.TENT -> listOf(StarterActions.nap)
-        ObjectKind.CAMPFIRE -> listOf(StarterActions.cook, StarterActions.snack, Together.stories, StarterActions.stargaze)
+        ObjectKind.CAMPFIRE -> listOf(StarterActions.cook, Fishing.grill, StarterActions.snack, Together.stories, StarterActions.stargaze)
         ObjectKind.WASHBASIN -> listOf(StarterActions.wash)
         ObjectKind.SIGNPOST -> listOf(StarterActions.work)
         ObjectKind.TREE -> listOf(Gathering.chop)
@@ -93,6 +94,7 @@ object ObjectActions {
         ObjectKind.WORKBENCH -> listOf(Refining.sawPlanks, Refining.fireBricks, Refining.weaveCloth)
         ObjectKind.BENCH -> listOf(StarterActions.stargaze, Outdoors.sit, Together.picnic)
         ObjectKind.TRAILHEAD -> listOf(Walks.alone)
+        ObjectKind.FISHING_SPOT -> listOf(Fishing.cast)
         ObjectKind.RACE_SIGN -> listOf(Races.lap)
         // The chest just shows what's stored.
         ObjectKind.CHEST -> emptyList()

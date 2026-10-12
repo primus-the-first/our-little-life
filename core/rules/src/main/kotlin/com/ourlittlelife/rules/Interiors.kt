@@ -91,7 +91,7 @@ object FurnitureActions {
         FurnitureKind.CHAIR -> listOf(sit)
         FurnitureKind.SOFA -> listOf(sitTogether)
         FurnitureKind.TABLE -> listOf(meal)
-        FurnitureKind.STOVE -> listOf(cook)
+        FurnitureKind.STOVE -> listOf(cook, Fishing.supper)
         FurnitureKind.WASHSTAND -> listOf(wash)
         FurnitureKind.BOOKSHELF -> listOf(read)
         FurnitureKind.RUG, FurnitureKind.PLANT, FurnitureKind.CANDLES -> emptyList()

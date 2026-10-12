@@ -32,6 +32,7 @@ data class Player(
     val greeting: Greeting? = null,
     val gesturesToday: List<Gesture> = emptyList(),
     val bestLapMillis: Long? = null,
+    val fishLog: Map<FishKind, Int> = emptyMap(),
 ) {
     val tile: Pair<Int, Int> get() = tileX to tileY
 }

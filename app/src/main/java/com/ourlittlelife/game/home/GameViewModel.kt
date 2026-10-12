@@ -17,6 +17,8 @@ import com.ourlittlelife.rules.Building
 import com.ourlittlelife.rules.Camp
 import com.ourlittlelife.rules.Character
 import com.ourlittlelife.rules.Clock
+import com.ourlittlelife.rules.FishKind
+import com.ourlittlelife.rules.Fishing
 import com.ourlittlelife.rules.Furniture
 import com.ourlittlelife.rules.Gesture
 import com.ourlittlelife.rules.FurnitureActions
@@ -165,6 +167,12 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     /** The piece being placed or moved, if any. */
     var holding by mutableStateOf<Holding?>(null)
         private set
+
+    /** True while the fishing screen is open. */
+    var fishing by mutableStateOf(false)
+        private set
+
+    val myFishLog: Map<FishKind, Int> get() = world?.takeIf { ready }?.let { me.fishLog } ?: emptyMap()
 
     /** True while the race screen is open. */
     var racing by mutableStateOf(false)
@@ -335,7 +343,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             tapped == characterTile -> selection = Selection.Person(myId)
             partner != null && tapped == partnerTile -> selection = Selection.Person(partner!!.id)
             thing != null -> selection = Selection.Thing(thing)
-            plot.terrainAt(x, y) == Terrain.WATER -> message = "The pond. Fishing is on the way."
+            plot.terrainAt(x, y) == Terrain.WATER -> message = "The pond. Fish from the fishing spot on the shore."
             plot.terrainAt(x, y) == Terrain.TRACK -> message = "The racecourse. Run a lap from the sign at the gate."
             buildMode && room == null -> selection = Selection.Ground(x, y)
             character.asleep -> message = "You're asleep. The day starts when everyone has gone to bed."
@@ -461,6 +469,11 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             message = refusal(ActionResult.Asleep)
             return
         }
+        val short = camp.storage.shortfall(action.costs)
+        if (short.isNotEmpty()) {
+            message = describeShortfall(short) + " in the chest."
+            return
+        }
         val spot = Interiors.spotBeside(room, piece, insideTile, setOfNotNull(partnerInHere?.inside?.tile)) ?: insideTile
         val company = piece.kind in FurnitureActions.shared && partnerInHere?.character?.asleep == false
         walkInside(room, spot) {
@@ -579,6 +592,10 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                     walkTo(spot, saveOnArrival = true) { racing = true }
                     return
                 }
+                if (action == Fishing.cast) {
+                    walkTo(spot, saveOnArrival = true) { fishing = true }
+                    return
+                }
                 walkTo(spot, saveOnArrival = true) {
                     playOut(action) {
                         val here = world!!.let { w -> w.withPlayer(w.player(myId).copy(tileX = spot.first, tileY = spot.second)) }
@@ -677,6 +694,25 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                 else -> "What a sky. +20 fun."
             }
         }) { w -> Together.stargaze(w, myId) }
+    }
+
+    /** A fish reeled in: which one is decided here, from how cleanly it was reeled ([quality]). */
+    fun landFish(quality: Float): FishKind? {
+        val local = world ?: return null
+        val kind = Fishing.pick(kotlin.random.Random.nextInt(100), quality)
+        if (Fishing.land(local, myId, kind) == null) return null
+        commit { w -> Fishing.land(w, myId, kind) }
+        return kind
+    }
+
+    fun missFish() {
+        commit { w -> Fishing.miss(w, myId) }
+    }
+
+    fun closeFishing() {
+        fishing = false
+        val caught = myFishLog.values.sum()
+        if (caught > 0) message = "Fish go in the chest. Grill one at the campfire, or cook a supper on the stove."
     }
 
     /** A lap is over: show how it went straight away, and save it. */
@@ -778,7 +814,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
      * what you're doing (faster when hurrying); otherwise it's idle time, saved every so often.
      */
     fun tick() {
-        if (!ready || character.asleep || stargazing || racing || touring) return
+        if (!ready || character.asleep || stargazing || racing || fishing || touring) return
         val doing = busy
         if (doing != null) {
             val next = doing.copy(elapsed = doing.elapsed + if (doing.hurry) HURRY_SPEED else 1f)
