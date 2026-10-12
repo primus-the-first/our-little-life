@@ -17,6 +17,9 @@ import com.ourlittlelife.rules.Camp
 import com.ourlittlelife.rules.Character
 import com.ourlittlelife.rules.Furniture
 import com.ourlittlelife.rules.FurnitureActions
+import com.ourlittlelife.rules.FurnitureKind
+import com.ourlittlelife.rules.FurniturePlacement
+import com.ourlittlelife.rules.PlaceResult
 import com.ourlittlelife.rules.Interiors
 import com.ourlittlelife.rules.ObjectActions
 import com.ourlittlelife.rules.Placement
@@ -40,6 +43,9 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.launch
+
+/** A piece of furniture in hand while furnishing: a new one to buy or make, or one being [moving]. */
+data class Holding(val kind: FurnitureKind, val x: Int, val y: Int, val moving: String? = null)
 
 /** What the player tapped on the plot. */
 sealed interface Selection {
@@ -122,6 +128,14 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
 
     /** Your partner, if they're inside the same room as you. */
     val partnerInHere: Player? get() = partner?.takeIf { it.inside != null && it.inside?.roomId == me.inside?.roomId }
+
+    /** True while the furniture tray is open inside a room. */
+    var furnishing by mutableStateOf(false)
+        private set
+
+    /** The piece being placed or moved, if any. */
+    var holding by mutableStateOf<Holding?>(null)
+        private set
 
     /** True while walking the forest loop; the map follows you round it. */
     var touring by mutableStateOf(false)
@@ -285,6 +299,8 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     /** Back out onto the doorstep. */
     fun goOutside() {
         selection = null
+        furnishing = false
+        holding = null
         walkJob?.cancel()
         val room = insideRoom ?: return
         val step = Interiors.doorstep(room)
@@ -297,10 +313,19 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         val room = insideRoom ?: return
         val tapped = x to y
         val piece = Interiors.furnitureAt(room, x, y)
+        // While furnishing, a tap moves the piece in hand there, or picks up a piece to move or put away.
+        if (furnishing) {
+            val held = holding
+            when {
+                held != null -> holding = held.copy(x = x, y = y)
+                piece != null -> selection = Selection.Piece(room, piece)
+            }
+            return
+        }
         when {
             tapped == insideTile -> selection = Selection.Person(myId)
             partnerInHere?.inside?.tile == tapped -> selection = Selection.Person(partner!!.id)
-            piece != null -> selection = Selection.Piece(room, piece)
+            piece != null && actionsFor(piece).isNotEmpty() -> selection = Selection.Piece(room, piece)
             !Interiors.isFree(room, tapped) -> Unit
             character.asleep -> message = "You're asleep. The day starts when everyone has gone to bed."
             else -> walkInside(room, tapped) { commit { w -> Interiors.moveTo(w, myId, tapped) } }
@@ -325,23 +350,77 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     /** Walks over to the piece of furniture, then uses it. */
     fun perform(room: Room, piece: Furniture, action: Action) {
         selection = null
-        val check = camp.useFurniture(character, room, piece, action)
-        if (check is UseResult.Refused) {
-            message = refusal(check.reason)
+        if (character.asleep) {
+            message = refusal(ActionResult.Asleep)
             return
         }
         val spot = Interiors.spotBeside(room, piece, insideTile, setOfNotNull(partnerInHere?.inside?.tile)) ?: insideTile
+        val company = piece.kind in FurnitureActions.shared && partnerInHere?.character?.asleep == false
         walkInside(room, spot) {
-            commit { w ->
-                val p = w.player(myId)
-                val current = w.camp.plot.rooms.firstOrNull { it.id == room.id } ?: return@commit null
-                val fresh = current.furniture.firstOrNull { it.id == piece.id } ?: return@commit null
-                when (val done = w.camp.useFurniture(p.character, current, fresh, action)) {
-                    is UseResult.Done -> Interiors.moveTo(w.copy(camp = done.camp).withPlayer(p.copy(character = done.character)), myId, spot)
-                    else -> null
+            commit(onSaved = { applied ->
+                if (applied && company) message = "Nicer with ${partnerName ?: "company"}. +${Interiors.COMPANY_SOCIAL} social."
+            }) { w -> Interiors.use(Interiors.moveTo(w, myId, spot), myId, piece.id, action) }
+        }
+    }
+
+    /** Opens or closes the furniture tray. */
+    fun toggleFurnishing() {
+        furnishing = !furnishing
+        holding = null
+        selection = null
+    }
+
+    /** Picks a new piece from the tray; it appears in the middle of the room, ready to be tapped into place. */
+    fun pick(kind: FurnitureKind) {
+        val room = insideRoom ?: return
+        holding = Holding(kind, (Interiors.width(room.kind) - kind.width) / 2, (Interiors.height(room.kind) - kind.height) / 2 - 1)
+    }
+
+    /** Picks up a piece that's already in the room, to put it somewhere else. */
+    fun startMoving(piece: Furniture) {
+        selection = null
+        holding = Holding(piece.kind, piece.x, piece.y, moving = piece.id)
+    }
+
+    fun cancelHolding() {
+        holding = null
+    }
+
+    /** Whether the piece in hand fits where it is. */
+    fun holdingPlacement(): FurniturePlacement {
+        val room = insideRoom ?: return FurniturePlacement.OffFloor
+        val held = holding ?: return FurniturePlacement.OffFloor
+        val standing = setOfNotNull(insideTile, partnerInHere?.inside?.tile)
+        return Interiors.check(room, held.kind, held.x, held.y, moving = held.moving, occupied = standing)
+    }
+
+    /** Puts the piece in hand down: paid for if it's new, free if it's being moved. */
+    fun placeHeld() {
+        val room = insideRoom ?: return
+        val held = holding ?: return
+        val result = if (held.moving != null) Interiors.move(world!!, room.id, held.moving, held.x, held.y)
+        else Interiors.place(world!!, room.id, held.kind, held.x, held.y)
+        when (result) {
+            is PlaceResult.Done -> {
+                holding = null
+                message = if (held.moving != null) "Moved." else "The ${held.kind.label.lowercase()} is in."
+                commit { w ->
+                    val fresh = if (held.moving != null) Interiors.move(w, room.id, held.moving, held.x, held.y)
+                    else Interiors.place(w, room.id, held.kind, held.x, held.y)
+                    (fresh as? PlaceResult.Done)?.world
                 }
             }
+            is PlaceResult.Missing -> message = describeShortfall(result.shortfall) + " in the chest."
+            is PlaceResult.CantPlace -> message = "That spot doesn't work. Try somewhere else."
         }
+    }
+
+    /** Takes a piece out of the room. What it cost goes back in the chest. */
+    fun putAway(piece: Furniture) {
+        selection = null
+        val room = insideRoom ?: return
+        message = "Put away. Its cost is back in the chest."
+        commit { w -> Interiors.putAway(w, room.id, piece.id).takeIf { it != w } }
     }
 
     fun dismissSelection() {

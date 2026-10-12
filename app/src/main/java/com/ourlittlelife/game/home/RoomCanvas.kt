@@ -41,6 +41,7 @@ fun RoomCanvas(
     room: Room,
     characters: List<PlacedCharacter>,
     selected: Furniture?,
+    ghost: Ghost?,
     onTapTile: (Int, Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -131,6 +132,23 @@ fun RoomCanvas(
                 cornerRadius = CornerRadius(6.dp.toPx()),
             )
             drawText(label, topLeft = Offset(tagLeft + pad, tagTop))
+        }
+
+        // Where the piece in hand would go: green-tinted if it fits, berry-tinted if not, with a dashed edge.
+        ghost?.let { (area, fits) ->
+            val tint = if (fits) colors.leaf else colors.berry
+            val topLeft = Offset(origin.x + area.x * tile, origin.y + area.y * tile)
+            val areaSize = Size(area.width * tile, area.height * tile)
+            drawRect(color = tint.copy(alpha = 0.35f), topLeft = topLeft, size = areaSize)
+            drawRect(
+                color = tint,
+                topLeft = topLeft,
+                size = areaSize,
+                style = androidx.compose.ui.graphics.drawscope.Stroke(
+                    width = 3.dp.toPx(),
+                    pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(10.dp.toPx(), 6.dp.toPx())),
+                ),
+            )
         }
 
         selected?.let { piece ->

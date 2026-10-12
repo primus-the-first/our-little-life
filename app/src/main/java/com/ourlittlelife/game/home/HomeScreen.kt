@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
@@ -34,6 +35,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.Role
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
@@ -55,7 +58,9 @@ import com.ourlittlelife.game.BuildConfig
 import com.ourlittlelife.rules.Building
 import com.ourlittlelife.rules.Clock
 import com.ourlittlelife.rules.Gathering
+import com.ourlittlelife.rules.FurnitureCategory
 import com.ourlittlelife.rules.FurnitureKind
+import com.ourlittlelife.rules.FurniturePlacement
 import com.ourlittlelife.rules.Placement
 import com.ourlittlelife.rules.Walks
 import com.ourlittlelife.rules.Room
@@ -198,6 +203,7 @@ private fun MapArea(viewModel: GameViewModel, focus: Pair<Int, Int>, modifier: M
         }
         val room = viewModel.insideRoom
         if (room != null) {
+            val held = viewModel.holding
             RoomCanvas(
                 room = room,
                 characters = listOfNotNull(
@@ -207,8 +213,12 @@ private fun MapArea(viewModel: GameViewModel, focus: Pair<Int, Int>, modifier: M
                     },
                 ),
                 selected = (selection as? Selection.Piece)?.piece,
+                ghost = held?.let { Ghost(TileArea(it.x, it.y, it.kind.width, it.kind.height), viewModel.holdingPlacement() == FurniturePlacement.Ok) },
                 onTapTile = viewModel::tapInside,
-                modifier = Modifier.fillMaxSize(),
+                // With the tray open, the room sits above it so every tile can still be tapped.
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(bottom = if (viewModel.furnishing) TRAY_HEIGHT else 0.dp),
             )
         } else {
             PlotCanvas(
@@ -280,13 +290,24 @@ private fun MapArea(viewModel: GameViewModel, focus: Pair<Int, Int>, modifier: M
                     .padding(horizontal = 10.dp, vertical = 6.dp)
                     .semantics { heading() },
             )
-            SecondaryButton(
-                text = "Head outside",
-                onClick = viewModel::goOutside,
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(12.dp),
-            )
+            if (viewModel.furnishing) {
+                FurnishTray(viewModel, modifier = Modifier.align(Alignment.BottomCenter))
+            } else {
+                SecondaryButton(
+                    text = "Furnish",
+                    onClick = viewModel::toggleFurnishing,
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .padding(12.dp),
+                )
+                SecondaryButton(
+                    text = "Head outside",
+                    onClick = viewModel::goOutside,
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(12.dp),
+                )
+            }
         } else {
             // A tap on grass normally walks there; build mode turns it into "place a room here".
             SecondaryButton(
@@ -525,6 +546,95 @@ private fun ObjectSheet(obj: PlotObject, viewModel: GameViewModel, asleep: Boole
     }
 }
 
+private val TRAY_HEIGHT = 196.dp
+
+/**
+ * The furniture tray: sorted by kind, each piece showing what it costs. Pick one and it appears in
+ * the room; tap the floor to move it, then place it. Pieces you can't afford say what's missing.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun FurnishTray(viewModel: GameViewModel, modifier: Modifier = Modifier) {
+    val colors = OllTheme.colors
+    var category by remember { mutableStateOf(FurnitureCategory.SEATING) }
+    val held = viewModel.holding
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(TRAY_HEIGHT)
+            .background(colors.surfaceRaised)
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        if (held != null) {
+            val placement = viewModel.holdingPlacement()
+            Text(
+                if (held.moving != null) "Moving the ${held.kind.label.lowercase()}. Tap the floor where it should go."
+                else "${held.kind.label} · ${formatCosts(held.kind.costs)}. Tap the floor where it should go.",
+                style = OllType.body,
+                color = colors.ink,
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                SecondaryButton(
+                    text = "Place here",
+                    detail = furnitureProblem(placement),
+                    enabled = placement == FurniturePlacement.Ok,
+                    onClick = viewModel::placeHeld,
+                    modifier = Modifier.weight(1f),
+                )
+                SecondaryButton(text = "Cancel", onClick = viewModel::cancelHolding)
+            }
+        } else {
+            Row(
+                modifier = Modifier.horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                FurnitureCategory.entries.forEach { option ->
+                    val chosen = option == category
+                    Text(
+                        option.label,
+                        style = OllType.button,
+                        color = if (chosen) colors.onFill else colors.ink,
+                        modifier = Modifier
+                            .heightIn(min = 48.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(if (chosen) colors.honey else colors.surfaceSunken)
+                            .selectable(selected = chosen, role = Role.Tab, onClick = { category = option })
+                            .padding(horizontal = 14.dp, vertical = 13.dp),
+                    )
+                }
+            }
+            Row(
+                modifier = Modifier.horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                FurnitureKind.entries.filter { it.category == category }.forEach { kind ->
+                    val short = viewModel.camp.storage.shortfall(kind.costs)
+                    SecondaryButton(
+                        text = kind.label,
+                        detail = if (short.isEmpty()) formatCosts(kind.costs) else describeShortfall(short),
+                        enabled = short.isEmpty(),
+                        onClick = { viewModel.pick(kind) },
+                    )
+                }
+            }
+        }
+        Spacer(Modifier.weight(1f))
+        SecondaryButton(text = "Done furnishing", onClick = viewModel::toggleFurnishing, modifier = Modifier.fillMaxWidth())
+    }
+}
+
+/** "120 coins", or "30 planks, 20 cloth". */
+private fun formatCosts(costs: Map<Resource, Int>): String =
+    costs.entries.joinToString(", ") { (resource, amount) -> "$amount ${resource.label.lowercase()}" }
+
+private fun furnitureProblem(placement: FurniturePlacement): String? = when (placement) {
+    FurniturePlacement.Ok -> null
+    FurniturePlacement.OffFloor -> "Doesn't fit there"
+    FurniturePlacement.Blocked -> "Something's in the way"
+    FurniturePlacement.BlocksDoor -> "Keep the door clear"
+}
+
 /** A piece of furniture inside a room: what it offers. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -541,7 +651,20 @@ private fun PieceSheet(selection: Selection.Piece, viewModel: GameViewModel, asl
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text(piece.kind.label, style = OllType.title, color = colors.ink, modifier = Modifier.semantics { heading() })
-            if (asleep) {
+            if (viewModel.furnishing) {
+                SecondaryButton(
+                    text = "Move",
+                    detail = "Free",
+                    onClick = { viewModel.startMoving(piece) },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                SecondaryButton(
+                    text = "Put away",
+                    detail = "Gives back ${formatCosts(piece.kind.costs)}",
+                    onClick = { viewModel.putAway(piece) },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            } else if (asleep) {
                 Text("Everyone's asleep. Start the next day first.", style = OllType.body, color = colors.inkMuted)
             } else {
                 if (piece.kind == FurnitureKind.BED) SleepHereButton(viewModel)

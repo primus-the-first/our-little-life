@@ -31,13 +31,22 @@ object Sprites {
     val floorDoorway = Color(0xFFC08A5C)
 
     fun forFurniture(kind: FurnitureKind): List<SpritePart> = when (kind) {
-        FurnitureKind.BED -> listOf(
-            SpritePart(0, 0, Sprite(Sheet.INDOOR, 14, 6)),
-            SpritePart(1, 0, Sprite(Sheet.INDOOR, 15, 6)),
-            SpritePart(0, 1, Sprite(Sheet.INDOOR, 14, 7)),
-            SpritePart(1, 1, Sprite(Sheet.INDOOR, 15, 7)),
-        )
+        FurnitureKind.BED -> block(Sheet.INDOOR, 14, 6, 2, 2)
+        FurnitureKind.CHAIR -> single(Sprite(Sheet.INDOOR, 0, 2))
+        FurnitureKind.SOFA -> block(Sheet.INDOOR, 4, 7, 2, 1)
+        FurnitureKind.TABLE -> block(Sheet.INDOOR, 3, 0, 2, 1)
+        FurnitureKind.STOVE -> single(Sprite(Sheet.INDOOR, 14, 14))
+        FurnitureKind.WASHSTAND -> single(Sprite(Sheet.INDOOR, 8, 12))
+        FurnitureKind.BOOKSHELF -> single(Sprite(Sheet.OUTDOOR, 45, 12))
+        // The carpet's top and bottom edges from the outdoor sheet's 3×3 carpet, without its middle row.
+        FurnitureKind.RUG -> block(Sheet.OUTDOOR, 44, 28, 3, 1) + block(Sheet.OUTDOOR, 44, 30, 3, 1).map { it.copy(dy = 1) }
+        FurnitureKind.PLANT -> single(Sprite(Sheet.INDOOR, 16, 0))
+        FurnitureKind.CANDLES -> single(Sprite(Sheet.INDOOR, 16, 7))
     }
+
+    /** A [width] × [height] run of sheet tiles starting at ([col], [row]), laid out the same way. */
+    private fun block(sheet: Sheet, col: Int, row: Int, width: Int, height: Int): List<SpritePart> =
+        (0 until height).flatMap { dy -> (0 until width).map { dx -> SpritePart(dx, dy, Sprite(sheet, col + dx, row + dy)) } }
 
     fun forKind(kind: ObjectKind): List<SpritePart> = when (kind) {
         ObjectKind.TENT -> listOf(
