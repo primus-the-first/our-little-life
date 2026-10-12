@@ -31,6 +31,16 @@ class WorldTest {
     }
 
     @Test
+    fun `a look has an outfit and one of four skin tones, and older looks keep working`() {
+        val dressed = Worlds.setLook(pair, "jo", Look(body = 1, skin = 3, outfit = 2))
+        assertEquals(Look(body = 1, skin = 3, outfit = 2), dressed.player("jo").look)
+        assertEquals(4, Look.SKIN_TONES)
+        assertEquals(3, Look.OUTFITS)
+        val old = Worlds.decode(Worlds.encode(Worlds.setLook(pair, "jo", Look(body = 0, skin = 1))).replace(",\"outfit\":0", ""))
+        assertEquals(Look(body = 0, skin = 1, outfit = 0), old.player("jo").look)
+    }
+
+    @Test
     fun `invite codes are 6 easy-to-read characters`() {
         val codes = (1..200).map { Worlds.newCode(Random(it)) }
         codes.forEach { code ->

@@ -19,9 +19,17 @@ enum class Activity(val label: String) {
     WALK_INVITE("Hoping for a walk"),
 }
 
-/** How a player's character looks: which of the two bodies, and light or dark skin. Null on a player means "not chosen yet". */
+/**
+ * How a player's character looks: which of the two bodies, which of its outfits, and which skin tone.
+ * Null on a player means "not chosen yet".
+ */
 @Serializable
-data class Look(val body: Int = 0, val skin: Int = 0)
+data class Look(val body: Int = 0, val skin: Int = 0, val outfit: Int = 0) {
+    companion object {
+        const val SKIN_TONES = 4
+        const val OUTFITS = 3
+    }
+}
 
 /** One person in a world: their character, where they stand, what they're doing, and when they went to bed (epoch millis). */
 @Serializable

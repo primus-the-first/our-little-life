@@ -220,10 +220,10 @@ private object Shared3D {
 
     fun cached(key: Any?, build: () -> List<Node>): List<Node> = built.getOrPut(key, build)
 
-    private val rigs = HashMap<Any, PersonRig>()
+    private val rigs = HashMap<Any, Body3D>()
 
     /** A person's figure, reused for as long as their name and look stay the same. */
-    fun rig(key: Any, build: () -> PersonRig): PersonRig = rigs.getOrPut(key, build)
+    fun rig(key: Any, build: () -> Body3D): Body3D = rigs.getOrPut(key, build)
 
     fun get(context: Context): Triple<Engine, ModelLoader, MaterialLoader> = made ?: run {
         val app = context.applicationContext
@@ -269,7 +269,7 @@ private fun TiltedScene(
                 animationSpec = tween(WALK_STEP_MILLIS.toInt(), easing = LinearEasing),
                 label = "walk3d-${figure.name}",
             )
-            val rig = remember(figure.name, figure.look) { Shared3D.rig(figure.name to figure.look) { PersonRig(engine, materials, figure.look) } }
+            val rig = remember(figure.name, figure.look) { Shared3D.rig(figure.name to figure.look) { makeBody(engine, models, materials, figure.look) } }
             val last = remember(figure.name) { floatArrayOf(at.x, at.y) }
             LaunchedEffect(at, rig, figure.pose, figure.restAt) {
                 val dx = at.x - last[0]
@@ -348,18 +348,97 @@ private fun TiltedScene(
     )
 }
 
+/** A person's body in the 3D view: where it is, whether it's walking, its pose, and how high it lies when lying down. */
+private interface Body3D {
+    val root: Node
+    var moving: Boolean
+    var stance: Pose3D
+
+    /** How high the body lies when lying down: on a bed, or just above the ground. */
+    var lift: Float
+
+    /** Called every frame with the time in seconds, to animate. */
+    fun pose(seconds: Float)
+}
+
+/** A clothed person model for this look, or the shape-built figure if the model can't be loaded. */
+private fun makeBody(engine: Engine, models: ModelLoader, materials: MaterialLoader, look: Look): Body3D =
+    runCatching { PersonModel(models, look) }.getOrElse { PersonRig(engine, materials, look) }
+
+/**
+ * A clothed person (Quaternius Ultimate Modular, CC0): an outfit for their body, their skin tone, and
+ * the animation for what they're doing: running between tiles, idling, busy hands, or lying down
+ * (the models have no sleeping clip, so the whole figure lies back).
+ */
+private class PersonModel(models: ModelLoader, look: Look) : Body3D {
+    private val model = ModelNode(
+        modelInstance = models.createModelInstance("models/person_${look.body.coerceIn(0, 1)}_${look.outfit.coerceIn(0, Look.OUTFITS - 1)}.glb"),
+        autoAnimate = false,
+        scaleToUnits = 1.75f,
+    )
+    override val root: Node = model
+    override var moving = false
+    override var stance = Pose3D.AUTO
+    override var lift = 0f
+    private var playing: String? = null
+    private var facing = 0f
+
+    init {
+        val tone = SKIN_TONES[look.skin.coerceIn(0, SKIN_TONES.size - 1)]
+        model.modelInstance.materialInstances.filter { it.name == "Skin" }.forEach {
+            it.setParameter("baseColorFactor", tone[0], tone[1], tone[2], 1f)
+        }
+        play("Idle")
+    }
+
+    override fun pose(seconds: Float) {
+        val lying = stance == Pose3D.LIE && !moving
+        when {
+            lying -> play(null)
+            moving -> play("Run", speed = 1.3f)
+            stance == Pose3D.WORK -> play("Interact")
+            stance == Pose3D.SIT -> play("Idle_Neutral")
+            else -> play("Idle")
+        }
+        val at = model.position
+        if (lying) {
+            model.rotation = Rotation(x = -90f, y = facing)
+            model.position = Position(at.x, maxOf(lift, 0.1f), at.z)
+        } else {
+            facing = model.rotation.y
+            if (model.rotation.x != 0f) model.rotation = Rotation(y = facing)
+            if (at.y != 0f) model.position = Position(at.x, 0f, at.z)
+        }
+    }
+
+    private fun play(clip: String?, speed: Float = 1f) {
+        if (clip == playing) return
+        playing?.let { model.stopAnimation(it) }
+        clip?.let { model.playAnimation(it, speed = speed) }
+        playing = clip
+    }
+
+    companion object {
+        /** Skin tones in linear colour, by Look.skin: deep, light, brown, tan. */
+        val SKIN_TONES = listOf(
+            floatArrayOf(0.16f, 0.08f, 0.045f),
+            floatArrayOf(0.78f, 0.56f, 0.42f),
+            floatArrayOf(0.32f, 0.16f, 0.08f),
+            floatArrayOf(0.56f, 0.34f, 0.19f),
+        )
+    }
+}
+
 /**
  * A person built from simple shapes until clothed character models arrive: shoes, legs, a torso in a
  * shirt colour, arms with hands, a head in their skin tone with eyes and hair (short for the first
  * body, longer for the second). Limbs hang from joints, so walking swings them like a real stride.
  */
-private class PersonRig(engine: Engine, materials: MaterialLoader, look: Look) {
-    val root = Node(engine)
-    var moving = false
-    var stance = Pose3D.AUTO
-
-    /** How high the body lies when lying down: on a bed, or just above the ground. */
-    var lift = 0f
+private class PersonRig(engine: Engine, materials: MaterialLoader, look: Look) : Body3D {
+    override val root = Node(engine)
+    override var moving = false
+    override var stance = Pose3D.AUTO
+    override var lift = 0f
 
     private val hips = Node(engine).also { it.parent = root }
     private val legs = listOf(-1f, 1f).map { side -> joint(engine, hips, Position(side * 0.09f, 0.48f, 0f)) }
@@ -403,7 +482,7 @@ private class PersonRig(engine: Engine, materials: MaterialLoader, look: Look) {
      * Walking swings legs and arms with a little bounce; sitting folds the legs forward; lying down
      * tips the whole body back; busy hands work up and down; standing still breathes gently.
      */
-    fun pose(seconds: Float) {
+    override fun pose(seconds: Float) {
         hips.rotation = Rotation()
         if (stance == Pose3D.LIE && !moving) {
             // Pivot at the feet so the body lies back along the bed, head towards -z, face up.

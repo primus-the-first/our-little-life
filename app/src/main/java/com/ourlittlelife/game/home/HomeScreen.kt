@@ -822,6 +822,24 @@ private fun GardenBeds(garden: Room, viewModel: GameViewModel) {
     }
 }
 
+/** One choice in "Your look": a label and a button per option, the chosen one marked. */
+@Composable
+private fun LookRow(label: String, options: List<Pair<String, Int>>, chosen: Int, onChoose: (Int) -> Unit) {
+    val colors = OllTheme.colors
+    Text(label, style = OllType.caption, color = colors.inkMuted)
+    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        options.forEach { (name, value) ->
+            SecondaryButton(
+                text = name,
+                detail = if (value == chosen) "Chosen" else null,
+                enabled = value != chosen,
+                onClick = { onChoose(value) },
+                modifier = Modifier.weight(1f),
+            )
+        }
+    }
+}
+
 /** A piece of furniture inside a room: what it offers. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -1084,29 +1102,12 @@ private fun PersonSheet(playerId: String, viewModel: GameViewModel) {
             if (isMe) {
                 val look = viewModel.lookFor(playerId)
                 Text("Your look", style = OllType.heading, color = colors.ink, modifier = Modifier.semantics { heading() })
-                Text("How you appear in the 3D view, to both of you. Proper people with clothes are on the way.", style = OllType.caption, color = colors.inkMuted)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf("Body 1" to 0, "Body 2" to 1).forEach { (label, body) ->
-                        SecondaryButton(
-                            text = label,
-                            detail = if (look.body == body) "Chosen" else null,
-                            enabled = look.body != body,
-                            onClick = { viewModel.chooseLook(look.copy(body = body)) },
-                            modifier = Modifier.weight(1f),
-                        )
-                    }
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf("Darker skin" to 0, "Lighter skin" to 1).forEach { (label, skin) ->
-                        SecondaryButton(
-                            text = label,
-                            detail = if (look.skin == skin) "Chosen" else null,
-                            enabled = look.skin != skin,
-                            onClick = { viewModel.chooseLook(look.copy(skin = skin)) },
-                            modifier = Modifier.weight(1f),
-                        )
-                    }
-                }
+                Text("How you appear in the 3D view, to both of you.", style = OllType.caption, color = colors.inkMuted)
+                LookRow("Body", listOf("Body 1" to 0, "Body 2" to 1), look.body) { viewModel.chooseLook(look.copy(body = it)) }
+                val outfits = if (look.body == 1) listOf("Casual", "Formal", "Worker") else listOf("Hoodie", "Casual", "Farmer")
+                LookRow("Outfit", outfits.mapIndexed { i, name -> name to i }, look.outfit) { viewModel.chooseLook(look.copy(outfit = it)) }
+                // Skin tones in order from deepest to lightest (stored as deep 0, brown 2, tan 3, light 1).
+                LookRow("Skin", listOf("Deep" to 0, "Brown" to 2, "Tan" to 3, "Light" to 1), look.skin) { viewModel.chooseLook(look.copy(skin = it)) }
             }
             if (!isMe) {
                 Text("Say hello", style = OllType.heading, color = colors.ink, modifier = Modifier.semantics { heading() })

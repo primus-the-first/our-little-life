@@ -49,6 +49,16 @@ PEOPLE = {
     'person_b_dark': ('Superhero_Female_FullBody', 'T_Superhero_Female_Dark_BaseColor.png', 'Hair_Long'),
     'person_b_light': ('Superhero_Female_FullBody', 'T_Superhero_Female_Light_BaseColor.png', 'Hair_Long'),
 }
+MODULAR_MEN = os.path.join(SRC, 'Ultimate Modular Men- Feb 2022', 'Ultimate Modular Men- Feb 2022', 'Individual Characters', 'glTF')
+MODULAR_WOMEN = os.path.join(SRC, 'Ultimate Modular Women - April 2022', 'Ultimate Modular Women - April 2022', 'Individual Characters', 'glTF')
+# Clothed everyday people (CC0). The file name is what the app loads: person_<body>_<outfit>.
+CLOTHED = {
+    'person_0_0': (MODULAR_MEN, 'Casual_Hoodie'), 'person_0_1': (MODULAR_MEN, 'Casual_2'), 'person_0_2': (MODULAR_MEN, 'Farmer'),
+    'person_1_0': (MODULAR_WOMEN, 'Casual'), 'person_1_1': (MODULAR_WOMEN, 'Formal'), 'person_1_2': (MODULAR_WOMEN, 'Worker'),
+}
+# The clothed people's clips the game uses: standing, walking, running, waving and busy hands.
+CLOTHED_CLIPS = ['Idle', 'Idle_Neutral', 'Walk', 'Run', 'Wave', 'Interact']
+
 # Animation clips the game plays, by their names in the Universal Animation Library.
 CLIPS = [
     'Idle_Loop', 'Walk_Loop', 'Jog_Fwd_Loop', 'Sitting_Enter', 'Sitting_Idle_Loop', 'Idle_Talking_Loop',
@@ -76,7 +86,10 @@ def read_gltf(path):
     blob = bytearray()
     if doc.get('buffers'):
         uri = doc['buffers'][0].get('uri')
-        if uri:
+        if uri and uri.startswith('data:'):
+            import base64
+            blob = bytearray(base64.b64decode(uri.split(',', 1)[1]))
+        elif uri:
             blob = bytearray(open(os.path.join(folder, uri), 'rb').read())
     return doc, blob, folder
 
@@ -307,6 +320,61 @@ def build_person(out_name, body, skin, hair):
     return write_glb(doc, blob, os.path.join(OUT, out_name + '.glb'))
 
 
+def build_clothed(folder, name, out_name):
+    """A clothed character: same meshes and skeleton, only the clips the game uses, packed compactly."""
+    src, src_blob, _ = read_gltf(os.path.join(folder, name + '.gltf'))
+    doc = {k: v for k, v in src.items() if k not in ('accessors', 'bufferViews', 'buffers', 'animations', 'meshes', 'skins')}
+    blob = bytearray()
+    cache = {}
+    doc['meshes'] = []
+    for mesh in src['meshes']:
+        prims = []
+        for p_ in mesh['primitives']:
+            prim = dict(p_)
+            prim['attributes'] = {k: copy_accessor(src, src_blob, doc, blob, v, cache) for k, v in p_['attributes'].items() if k in KEEP_ATTRIBUTES}
+            if 'indices' in p_:
+                prim['indices'] = copy_accessor(src, src_blob, doc, blob, p_['indices'], cache)
+            prim.pop('targets', None)
+            prims.append(prim)
+        doc['meshes'].append({**mesh, 'primitives': prims})
+    doc['skins'] = []
+    for skin in src.get('skins', []):
+        new = dict(skin)
+        if 'inverseBindMatrices' in skin:
+            new['inverseBindMatrices'] = copy_accessor(src, src_blob, doc, blob, skin['inverseBindMatrices'], cache)
+        doc['skins'].append(new)
+    doc['animations'] = []
+    for anim in src.get('animations', []):
+        if anim.get('name') not in CLOTHED_CLIPS:
+            continue
+        samplers, channels = [], []
+        for ch in anim['channels']:
+            smp = anim['samplers'][ch['sampler']]
+            held = constant_track(src, src_blob, smp['output'])
+            if held is not None:
+                samplers.append({
+                    'input': add_accessor(doc, blob, struct.pack('<f', 0.0), 'SCALAR', [0.0], [0.0]),
+                    'output': add_accessor(doc, blob, held, src['accessors'][smp['output']]['type']),
+                    'interpolation': 'STEP',
+                })
+            else:
+                samplers.append({
+                    'input': copy_accessor(src, src_blob, doc, blob, smp['input'], cache),
+                    'output': copy_accessor(src, src_blob, doc, blob, smp['output'], cache),
+                    'interpolation': smp.get('interpolation', 'LINEAR'),
+                })
+            channels.append({'sampler': len(samplers) - 1, 'target': ch['target']})
+        doc['animations'].append({'name': anim['name'], 'samplers': samplers, 'channels': channels})
+    missing = set(CLOTHED_CLIPS) - {a['name'] for a in doc['animations']}
+    if missing:
+        sys.exit(f'{name}: missing clips {missing}')
+    for m in doc.get('materials', []):
+        pbr = m.setdefault('pbrMetallicRoughness', {})
+        pbr['metallicFactor'] = 0.0
+        pbr['roughnessFactor'] = 0.85
+    return write_glb(doc, blob, os.path.join(OUT, out_name + '.glb'))
+
+
 def read_mtl(path):
     colours, current = {}, None
     if not os.path.exists(path):
@@ -394,6 +462,8 @@ def main():
         total += build_obj(os.path.join(CROPS, src + '.obj'), name)
     for name, src in FURNITURE_MODELS.items():
         total += build_obj(os.path.join(FURNITURE, src + '.obj'), name)
+    for name, (folder, src) in CLOTHED.items():
+        total += build_clothed(folder, src, name)
     # The free Universal Base Characters are bare bodies in underwear (clothes are in the paid edition),
     # so they aren't shipped. build_person stays for clothed characters on the same skeleton.
     if '--people' in sys.argv:
