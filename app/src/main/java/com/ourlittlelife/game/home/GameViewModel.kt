@@ -56,7 +56,7 @@ import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.launch
 
 /** Something your character is in the middle of, playing out minute by minute. [onDone] lands it. */
-data class Busy(val label: String, val minutes: Int, val elapsed: Float = 0f, val hurry: Boolean = false, val onDone: () -> Unit)
+data class Busy(val label: String, val minutes: Int, val elapsed: Float = 0f, val hurry: Boolean = false, val pose: Pose3D = Pose3D.WORK, val onDone: () -> Unit)
 
 /** A piece of furniture in hand while furnishing: a new one to buy or make, or one being [moving]. */
 data class Holding(val kind: FurnitureKind, val x: Int, val y: Int, val moving: String? = null)
@@ -906,7 +906,29 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
 
     /** Plays [action] out minute by minute, then runs [onDone]. Long things (work, building) happen in one go. */
     private fun playOut(action: Action, onDone: () -> Unit) {
-        if (action.minutes > PLAY_OUT_MAX_MINUTES) onDone() else busy = Busy(action.name, action.minutes, onDone = onDone)
+        if (action.minutes > PLAY_OUT_MAX_MINUTES) onDone() else busy = Busy(action.name, action.minutes, pose = poseFor(action), onDone = onDone)
+    }
+
+    /** How the body looks while doing [action] in 3D: lying for naps, sitting for rests and meals, busy hands otherwise. */
+    private fun poseFor(action: Action): Pose3D = when (action.id) {
+        "nap_tent", "nap_bed" -> Pose3D.LIE
+        "sit_bench", "sit_chair", "sit_sofa", "meal_table", "read_book", "picnic", "fire_stories" -> Pose3D.SIT
+        else -> Pose3D.WORK
+    }
+
+    /** Your pose in 3D: asleep is lying down; otherwise whatever you're busy with, or walking and standing. */
+    val myPose: Pose3D get() = if (ready && character.asleep) Pose3D.LIE else busy?.pose ?: Pose3D.AUTO
+
+    fun poseOf(player: Player): Pose3D = if (player.character.asleep) Pose3D.LIE else Pose3D.AUTO
+
+    /**
+     * Where someone lies when lying down in a room with a bed: their side of the first bed (the host on
+     * the left, whoever joined on the right). Null when there's no bed, so they lie where they are.
+     */
+    fun bedSpot(room: Room, playerId: String): io.github.sceneview.math.Position? {
+        val bed = room.furniture.firstOrNull { it.kind == com.ourlittlelife.rules.FurnitureKind.BED } ?: return null
+        val left = world?.players?.keys?.firstOrNull() == playerId
+        return io.github.sceneview.math.Position(bed.x + if (left) 0.5f else 1.5f, 0.55f, bed.y + bed.kind.height - 0.15f)
     }
 
     /** Speeds up what you're doing. */

@@ -3,6 +3,7 @@ package com.ourlittlelife.game.home
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateOffsetAsState
 import androidx.compose.animation.core.tween
+import android.content.Context
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -15,6 +16,7 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import com.google.android.filament.Engine
@@ -33,6 +35,7 @@ import com.ourlittlelife.rules.Plot
 import com.ourlittlelife.rules.RoomKind
 import com.ourlittlelife.rules.WorldMap
 import io.github.sceneview.Scene
+import io.github.sceneview.SceneView
 import io.github.sceneview.loaders.MaterialLoader
 import io.github.sceneview.loaders.ModelLoader
 import io.github.sceneview.math.Position
@@ -44,9 +47,6 @@ import io.github.sceneview.node.SphereNode
 import io.github.sceneview.node.ModelNode
 import io.github.sceneview.node.Node
 import io.github.sceneview.rememberCameraNode
-import io.github.sceneview.rememberEngine
-import io.github.sceneview.rememberMaterialLoader
-import io.github.sceneview.rememberModelLoader
 import io.github.sceneview.rememberOnGestureListener
 import io.github.sceneview.rememberView
 import io.github.sceneview.utils.motionEventToRay
@@ -91,8 +91,21 @@ private object Palette {
     val selected = Color(0xFF2B2B2B)
 }
 
-/** One person in the 3D world: where they stand and how they look. */
-data class Figure3D(val name: String, val x: Int, val y: Int, val look: Look)
+/** What a person's body is doing: walking or standing on its own ([AUTO]), sitting, lying down, or busy with their hands. */
+enum class Pose3D { AUTO, SIT, LIE, WORK }
+
+/**
+ * One person in the 3D world: where they stand, how they look, and their pose. [restAt] puts them
+ * somewhere exact instead of on their tile, such as their side of the bed.
+ */
+data class Figure3D(
+    val name: String,
+    val x: Int,
+    val y: Int,
+    val look: Look,
+    val pose: Pose3D = Pose3D.AUTO,
+    val restAt: Position? = null,
+)
 
 /** Model files (in assets/models) and the size each is drawn at, in tiles. */
 private object Models {
@@ -134,12 +147,10 @@ fun World3D(
     onTapTile: (Int, Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val engine = rememberEngine()
-    val models = rememberModelLoader(engine)
-    val materials = rememberMaterialLoader(engine)
+    val (engine, models, materials) = Shared3D.get(LocalContext.current)
 
     // The land and everything on it, rebuilt only when the plot changes (something built, planted or placed).
-    val worldNodes = remember(plot) { buildWorld(engine, models, materials, plot) }
+    val worldNodes = rememberCached(plot) { buildWorld(engine, models, materials, plot) }
 
     TiltedScene(
         engine = engine,
@@ -170,11 +181,9 @@ fun Room3D(
     onTapTile: (Int, Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val engine = rememberEngine()
-    val models = rememberModelLoader(engine)
-    val materials = rememberMaterialLoader(engine)
-    val roomNodes = remember(room) { buildRoom(engine, models, materials, room) }
-    val marks = remember(selected, ghost) { buildMarks(engine, materials, selected, ghost) }
+    val (engine, models, materials) = Shared3D.get(LocalContext.current)
+    val roomNodes = rememberCached(room) { buildRoom(engine, models, materials, room) }
+    val marks = rememberCached(selected to ghost) { buildMarks(engine, materials, selected, ghost) }
     TiltedScene(
         engine = engine,
         models = models,
@@ -185,9 +194,45 @@ fun Room3D(
         onTapTile = onTapTile,
         description = "Inside the ${room.kind.label.lowercase()} in 3D. Tap furniture to use it, or the floor to walk. Pinch to zoom, drag to look around.",
         modifier = modifier,
-        startZoom = 0.85f,
+        startZoom = 1.6f,
     )
 }
+
+/**
+ * One 3D engine and model loader for the whole game, made the first time they're needed and kept for
+ * as long as the app runs. Each view used to make its own and destroy it on closing, and going inside
+ * or heading out would tear an engine down while the old view was still finishing a frame: a crash.
+ */
+private object Shared3D {
+    private var made: Triple<Engine, ModelLoader, MaterialLoader>? = null
+
+    /** Built nodes by what they show (a plot, a room, a person). The oldest are dropped from the cache when it's full. */
+    private val built = object : LinkedHashMap<Any?, List<Node>>(16, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Any?, List<Node>>?) = size > CACHE_SIZE
+    }
+
+    fun cached(key: Any?, build: () -> List<Node>): List<Node> = built.getOrPut(key, build)
+
+    private val rigs = HashMap<Any, PersonRig>()
+
+    /** A person's figure, reused for as long as their name and look stay the same. */
+    fun rig(key: Any, build: () -> PersonRig): PersonRig = rigs.getOrPut(key, build)
+
+    fun get(context: Context): Triple<Engine, ModelLoader, MaterialLoader> = made ?: run {
+        val app = context.applicationContext
+        val engine = SceneView.createEngine(SceneView.createEglContext())
+        Triple(engine, SceneView.createModelLoader(engine, app), SceneView.createMaterialLoader(engine, app)).also { made = it }
+    }
+}
+
+/**
+ * The nodes for [key], built once and then kept and reused: going back into a room, or back out to the
+ * world, shows the same models again instead of loading new copies. Nothing is freed, because freeing
+ * models while views switch crashes the model loader; reuse keeps memory from growing instead. Only one
+ * view is ever on screen, so a node is never in two scenes at once.
+ */
+@Composable
+private fun rememberCached(key: Any?, build: () -> List<Node>): List<Node> = remember(key) { Shared3D.cached(key, build) }
 
 /**
  * The shared camera and people for the world and rooms: a camera tilted down from the south-east that
@@ -217,16 +262,21 @@ private fun TiltedScene(
                 animationSpec = tween(WALK_STEP_MILLIS.toInt(), easing = LinearEasing),
                 label = "walk3d-${figure.name}",
             )
-            val rig = remember(figure.name, figure.look) { PersonRig(engine, materials, figure.look) }
+            val rig = remember(figure.name, figure.look) { Shared3D.rig(figure.name to figure.look) { PersonRig(engine, materials, figure.look) } }
             val last = remember(figure.name) { floatArrayOf(at.x, at.y) }
-            LaunchedEffect(at, rig) {
+            LaunchedEffect(at, rig, figure.pose, figure.restAt) {
                 val dx = at.x - last[0]
                 val dz = at.y - last[1]
-                if (abs(dx) + abs(dz) > 1e-4f) {
+                val rest = figure.restAt
+                if (rest != null) {
+                    rig.root.rotation = Rotation()  // lying in bed: head towards the back wall
+                } else if (abs(dx) + abs(dz) > 1e-4f) {
                     rig.root.rotation = Rotation(y = Math.toDegrees(atan2(dx, dz).toDouble()).toFloat())
                 }
                 rig.moving = at.x != figure.x.toFloat() || at.y != figure.y.toFloat()
-                rig.root.position = Position(at.x + 0.5f, 0f, at.y + 0.5f)
+                rig.stance = figure.pose
+                rig.lift = rest?.y ?: 0f
+                rig.root.position = rest?.let { Position(it.x, 0f, it.z) } ?: Position(at.x + 0.5f, 0f, at.y + 0.5f)
                 last[0] = at.x
                 last[1] = at.y
             }
@@ -299,6 +349,10 @@ private fun TiltedScene(
 private class PersonRig(engine: Engine, materials: MaterialLoader, look: Look) {
     val root = Node(engine)
     var moving = false
+    var stance = Pose3D.AUTO
+
+    /** How high the body lies when lying down: on a bed, or just above the ground. */
+    var lift = 0f
 
     private val hips = Node(engine).also { it.parent = root }
     private val legs = listOf(-1f, 1f).map { side -> joint(engine, hips, Position(side * 0.09f, 0.48f, 0f)) }
@@ -338,8 +392,37 @@ private class PersonRig(engine: Engine, materials: MaterialLoader, look: Look) {
         }
     }
 
-    /** Swings legs and arms in opposition while walking, with a little bounce; breathes gently at rest. */
+    /**
+     * Walking swings legs and arms with a little bounce; sitting folds the legs forward; lying down
+     * tips the whole body back; busy hands work up and down; standing still breathes gently.
+     */
     fun pose(seconds: Float) {
+        hips.rotation = Rotation()
+        if (stance == Pose3D.LIE && !moving) {
+            // Pivot at the feet so the body lies back along the bed, head towards -z, face up.
+            hips.rotation = Rotation(x = -90f)
+            hips.position = Position(0f, maxOf(lift, 0.12f), 0f)
+            legs.forEach { it.rotation = Rotation() }
+            arms[0].rotation = Rotation(z = 8f)
+            arms[1].rotation = Rotation(z = -8f)
+            chest.position = Position(0f, 0f, sin(seconds * 1.1f) * 0.01f)
+            return
+        }
+        chest.position = Position()
+        if (stance == Pose3D.SIT && !moving) {
+            legs.forEach { it.rotation = Rotation(x = -85f) }
+            arms.forEach { it.rotation = Rotation(x = -30f) }
+            hips.position = Position(0f, sin(seconds * 1.6f) * 0.006f, 0f)
+            return
+        }
+        if (stance == Pose3D.WORK && !moving) {
+            val stroke = -55f + sin(seconds * 6f) * 35f
+            legs[0].rotation = Rotation(x = 8f)
+            legs[1].rotation = Rotation(x = -8f)
+            arms.forEach { it.rotation = Rotation(x = stroke) }
+            hips.position = Position(0f, abs(sin(seconds * 6f)) * 0.015f, 0f)
+            return
+        }
         if (moving) {
             val phase = sin(seconds * STRIDES_PER_SECOND * 2 * PI.toFloat())
             val swing = phase * 32f
@@ -365,11 +448,31 @@ private class PersonRig(engine: Engine, materials: MaterialLoader, look: Look) {
 /** Strides per second at walking pace: one stride per tile, a tile per step of the game. */
 private val STRIDES_PER_SECOND = 1000f / WALK_STEP_MILLIS / 2f
 
+private const val CACHE_SIZE = 12
 private const val MIN_ZOOM = 0.45f
 private const val MAX_ZOOM = 3.2f
 private const val PAN_PER_PIXEL = 0.012f
 private const val CAMERA_BACK = 6f
 private const val CAMERA_HEIGHT = 7.5f
+
+/**
+ * Stands a model on the ground at [at], centred on its real middle and turned [turn] degrees. (SceneView's
+ * own centring only lowers a model by its height, so models whose middle isn't at their origin, like the
+ * bed, ended up off to one side of their spot.)
+ */
+private fun placed(@Suppress("UNUSED_PARAMETER") engine: Engine, model: ModelNode, at: Position, turn: Float = 0f): Node {
+    val centre = model.boundingBox.center
+    val half = model.boundingBox.halfExtent
+    val k = model.scale.x
+    val ox = -centre[0] * k
+    val oz = -centre[2] * k
+    val radians = Math.toRadians(turn.toDouble())
+    val c = kotlin.math.cos(radians).toFloat()
+    val s = kotlin.math.sin(radians).toFloat()
+    model.rotation = Rotation(y = turn)
+    model.position = Position(at.x + ox * c + oz * s, -(centre[1] - half[1]) * k, at.z - ox * s + oz * c)
+    return model
+}
 
 /** Furniture models (assets/models) for the pieces that have one; the rest are drawn as simple shapes. */
 private fun furnitureModel(kind: FurnitureKind): String? = when (kind) {
@@ -443,11 +546,13 @@ private fun buildRoom(engine: Engine, models: ModelLoader, materials: MaterialLo
     }
     placements.forEach { (file, pieces) ->
         models.createInstancedModel("models/$file.glb", pieces.size).zip(pieces).forEach { (instance, piece) ->
-            nodes += ModelNode(instance, autoAnimate = false, scaleToUnits = furnitureSize(piece.kind), centerOrigin = Position(0f, -1f, 0f)).apply {
-                position = Position(piece.x + piece.kind.width / 2f, 0f, piece.y + piece.kind.height / 2f)
-                // The table model runs front to back; its spot in the game runs left to right.
-                if (piece.kind == FurnitureKind.TABLE) rotation = Rotation(y = 90f)
-            }
+            // The table model runs front to back; its spot in the game runs left to right.
+            nodes += placed(
+                engine,
+                ModelNode(instance, autoAnimate = false, scaleToUnits = furnitureSize(piece.kind)),
+                Position(piece.x + piece.kind.width / 2f, 0f, piece.y + piece.kind.height / 2f),
+                turn = if (piece.kind == FurnitureKind.TABLE) 90f else 0f,
+            )
         }
     }
     return nodes
@@ -564,10 +669,7 @@ private fun buildWorld(engine: Engine, models: ModelLoader, materials: MaterialL
         val instances = models.createInstancedModel("models/$file.glb", spots.size)
         instances.zip(spots).forEach { (instance, spot) ->
             val (x, z, turn) = spot
-            nodes += ModelNode(instance, autoAnimate = false, scaleToUnits = Models.size(file), centerOrigin = Position(0f, -1f, 0f)).apply {
-                position = Position(x, 0f, z)
-                rotation = Rotation(y = turn)
-            }
+            nodes += placed(engine, ModelNode(instance, autoAnimate = false, scaleToUnits = Models.size(file)), Position(x, 0f, z), turn)
         }
     }
     return nodes

@@ -369,10 +369,19 @@ def build_obj(src_path, out_name):
         doc['accessors'].append({'bufferView': pv, 'componentType': 5126, 'count': len(pos), 'type': 'VEC3', 'min': mins, 'max': maxs})
         nv = add_view(doc, blob, ndata)
         doc['accessors'].append({'bufferView': nv, 'componentType': 5126, 'count': len(nor), 'type': 'VEC3'})
+        # Filament's loader expects indexed triangles, so give every corner its own index.
+        count = len(pos)
+        if count < 65536:
+            idata, itype = struct.pack(f'<{count}H', *range(count)), 5123
+        else:
+            idata, itype = struct.pack(f'<{count}I', *range(count)), 5125
+        iv = add_view(doc, blob, idata)
+        doc['accessors'].append({'bufferView': iv, 'componentType': itype, 'count': count, 'type': 'SCALAR'})
+        index_accessor = len(doc['accessors']) - 1
         kd = colours.get(material, [0.8, 0.8, 0.8])
         doc['materials'].append({'name': material, 'pbrMetallicRoughness': {'baseColorFactor': kd + [1.0], 'metallicFactor': 0.0, 'roughnessFactor': 0.85}})
-        doc['meshes'][0]['primitives'].append({'attributes': {'POSITION': len(doc['accessors']) - 2, 'NORMAL': len(doc['accessors']) - 1},
-                                               'material': len(doc['materials']) - 1})
+        doc['meshes'][0]['primitives'].append({'attributes': {'POSITION': index_accessor - 2, 'NORMAL': index_accessor - 1},
+                                               'indices': index_accessor, 'material': len(doc['materials']) - 1})
     return write_glb(doc, blob, os.path.join(OUT, out_name + '.glb'))
 
 

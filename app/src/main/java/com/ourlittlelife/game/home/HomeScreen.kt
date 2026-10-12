@@ -262,8 +262,23 @@ private fun MapArea(viewModel: GameViewModel, focus: Pair<Int, Int>, modifier: M
             if (viewModel.view3d) Room3D(
                 room = room,
                 figures = listOfNotNull(
-                    Figure3D(character.name, viewModel.insideTile.first, viewModel.insideTile.second, viewModel.lookFor(viewModel.myPlayerId)),
-                    viewModel.partnerInHere?.let { other -> other.inside?.let { Figure3D(other.character.name, it.x, it.y, viewModel.lookFor(other.id)) } },
+                    viewModel.myPose.let { pose ->
+                        Figure3D(
+                            character.name, viewModel.insideTile.first, viewModel.insideTile.second, viewModel.lookFor(viewModel.myPlayerId),
+                            pose = pose,
+                            restAt = if (pose == Pose3D.LIE) viewModel.bedSpot(room, viewModel.myPlayerId) else null,
+                        )
+                    },
+                    viewModel.partnerInHere?.let { other ->
+                        other.inside?.let {
+                            val pose = viewModel.poseOf(other)
+                            Figure3D(
+                                other.character.name, it.x, it.y, viewModel.lookFor(other.id),
+                                pose = pose,
+                                restAt = if (pose == Pose3D.LIE) viewModel.bedSpot(room, other.id) else null,
+                            )
+                        }
+                    },
                 ),
                 focus = Interiors.width(room.kind) / 2 to Interiors.height(room.kind) / 2,
                 selected = (selection as? Selection.Piece)?.piece,
@@ -292,9 +307,9 @@ private fun MapArea(viewModel: GameViewModel, focus: Pair<Int, Int>, modifier: M
             World3D(
                 plot = viewModel.plot,
                 figures = listOfNotNull(
-                    Figure3D(character.name, viewModel.characterTile.first, viewModel.characterTile.second, viewModel.lookFor(viewModel.myPlayerId)),
+                    Figure3D(character.name, viewModel.characterTile.first, viewModel.characterTile.second, viewModel.lookFor(viewModel.myPlayerId), pose = viewModel.myPose),
                     viewModel.partner?.takeIf { it.inside == null }?.let { other ->
-                        viewModel.partnerTile?.let { (x, y) -> Figure3D(other.character.name, x, y, viewModel.lookFor(other.id)) }
+                        viewModel.partnerTile?.let { (x, y) -> Figure3D(other.character.name, x, y, viewModel.lookFor(other.id), pose = viewModel.poseOf(other)) }
                     },
                 ),
                 focus = viewModel.characterTile,
@@ -363,7 +378,7 @@ private fun MapArea(viewModel: GameViewModel, focus: Pair<Int, Int>, modifier: M
         }
 
         if (room != null) {
-            Text(
+            if (doing == null && inviter == null && !viewModel.askedForWalk && note == null) Text(
                 room.kind.label,
                 style = OllType.heading,
                 color = colors.ink,
