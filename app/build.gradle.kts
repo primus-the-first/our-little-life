@@ -16,8 +16,13 @@ android {
         applicationId = "com.ourlittlelife.game"
         minSdk = 26
         targetSdk = 35
-        versionCode = 17
-        versionName = "0.15.0"
+        // Real phones only: 64-bit ARM (nearly every phone of the last several years) and older 32-bit ARM.
+        // The 3D engine is native code, so each extra chip type adds several megabytes.
+        ndk {
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a")
+        }
+        versionCode = 18
+        versionName = "0.16.0"
     }
 
     buildTypes {
@@ -29,6 +34,11 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    // Filament's compiled materials and textures must stay uncompressed inside the APK.
+    androidResources {
+        noCompress += listOf("filamat", "ktx")
     }
 
     buildFeatures {
@@ -49,6 +59,8 @@ dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
+    // The 3D view: SceneView on Filament (Apache 2.0).
+    implementation(libs.sceneview)
 
     // Shared world: sign-in and the database. All on Firebase's free plan.
     implementation(platform(libs.firebase.bom))

@@ -25,3 +25,7 @@ art/adult/
 
 # Shareable APKs
 dist/
+
+# Downloaded art packs (zips); only the models the game uses are copied into app assets
+art/kenney/*.zip
+art/kenney/**/

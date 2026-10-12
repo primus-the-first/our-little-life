@@ -273,6 +273,19 @@ private fun MapArea(viewModel: GameViewModel, focus: Pair<Int, Int>, modifier: M
                     .fillMaxSize()
                     .padding(bottom = if (viewModel.furnishing) TRAY_HEIGHT else 0.dp),
             )
+        } else if (viewModel.view3d) {
+            World3D(
+                plot = viewModel.plot,
+                figures = listOfNotNull(
+                    Figure3D(character.name, viewModel.characterTile.first, viewModel.characterTile.second, colors.peach),
+                    viewModel.partner?.takeIf { it.inside == null }?.let { other ->
+                        viewModel.partnerTile?.let { (x, y) -> Figure3D(other.character.name, x, y, colors.sky) }
+                    },
+                ),
+                focus = viewModel.characterTile,
+                onTapTile = viewModel::tapTile,
+                modifier = Modifier.fillMaxSize(),
+            )
         } else {
             PlotCanvas(
                 plot = viewModel.plot,
@@ -1104,6 +1117,12 @@ private fun NeedsSheet(viewModel: GameViewModel, onDismiss: () -> Unit, onBackTo
             }
 
             Text("This world", style = OllType.heading, color = colors.ink, modifier = Modifier.semantics { heading() })
+            SecondaryButton(
+                text = if (viewModel.view3d) "Switch to the flat map" else "Try the 3D view",
+                detail = if (viewModel.view3d) "3D preview is on" else "Preview, with stand-in shapes",
+                onClick = { viewModel.chooseView3d(!viewModel.view3d) },
+                modifier = Modifier.fillMaxWidth(),
+            )
             Text(
                 if (viewModel.isSolo) {
                     "Your solo game, saved on this phone. To play with someone, start or join a shared world from the lobby."

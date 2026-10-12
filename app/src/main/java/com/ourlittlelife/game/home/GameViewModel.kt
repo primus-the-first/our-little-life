@@ -163,6 +163,17 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             return saved.copy(minute = saved.minute + pendingMinutes + (busy?.elapsed?.toInt() ?: 0))
         }
 
+    private val viewPrefs = application.getSharedPreferences("view", android.content.Context.MODE_PRIVATE)
+
+    /** Whether the world is drawn in 3D (still a preview) or as the flat map. Remembered on this phone. */
+    var view3d by mutableStateOf(viewPrefs.getBoolean("3d", false))
+        private set
+
+    fun chooseView3d(on: Boolean) {
+        view3d = on
+        viewPrefs.edit().putBoolean("3d", on).apply()
+    }
+
     /** True while the furniture tray is open inside a room. */
     var furnishing by mutableStateOf(false)
         private set
