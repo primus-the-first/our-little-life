@@ -21,6 +21,8 @@ import com.ourlittlelife.rules.FurnitureActions
 import com.ourlittlelife.rules.FurnitureKind
 import com.ourlittlelife.rules.FurniturePlacement
 import com.ourlittlelife.rules.PlaceResult
+import com.ourlittlelife.rules.RaceOutcome
+import com.ourlittlelife.rules.Races
 import com.ourlittlelife.rules.Interiors
 import com.ourlittlelife.rules.ObjectActions
 import com.ourlittlelife.rules.Placement
@@ -137,6 +139,18 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     /** The piece being placed or moved, if any. */
     var holding by mutableStateOf<Holding?>(null)
         private set
+
+    /** True while the race screen is open. */
+    var racing by mutableStateOf(false)
+        private set
+
+    /** How the lap just run went, shown at the finish. */
+    var lastRace by mutableStateOf<RaceOutcome?>(null)
+        private set
+
+    val myBestLap: Long? get() = world?.takeIf { ready }?.let { me.bestLapMillis }
+
+    val startStamina: Int get() = Races.stamina(character)
 
     /** True while walking the forest loop; the map follows you round it. */
     var touring by mutableStateOf(false)
@@ -276,7 +290,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             partner != null && tapped == partnerTile -> selection = Selection.Person(partner!!.id)
             thing != null -> selection = Selection.Thing(thing)
             plot.terrainAt(x, y) == Terrain.WATER -> message = "The pond. Fishing is on the way."
-            plot.terrainAt(x, y) == Terrain.TRACK -> message = "The racecourse is fenced off for now. Races are on the way."
+            plot.terrainAt(x, y) == Terrain.TRACK -> message = "The racecourse. Run a lap from the sign at the gate."
             buildMode && room == null -> selection = Selection.Ground(x, y)
             character.asleep -> message = "You're asleep. The day starts when everyone has gone to bed."
             else -> walkTo(x to y, saveOnArrival = true) {
@@ -509,6 +523,10 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                     walkAlone(obj)
                     return
                 }
+                if (action == Races.lap) {
+                    walkTo(spot, saveOnArrival = true) { racing = true }
+                    return
+                }
                 walkTo(spot, saveOnArrival = false) {
                     val here = world!!.let { w -> w.withPlayer(w.player(myId).copy(tileX = spot.first, tileY = spot.second)) }
                     val bonus = Together.companyBonus[action]?.takeIf { Together.hasCompany(here, here.player(myId)) }
@@ -600,6 +618,22 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                 else -> "What a sky. +20 fun."
             }
         }) { w -> Together.stargaze(w, myId) }
+    }
+
+    /** A lap is over: show how it went straight away, and save it. */
+    fun finishLap(millis: Long) {
+        val local = world ?: return
+        lastRace = Races.finish(local, myId, millis)
+        commit { w -> Races.finish(w, myId, millis)?.world }
+    }
+
+    fun raceAgain() {
+        lastRace = null
+    }
+
+    fun closeRace() {
+        racing = false
+        lastRace = null
     }
 
     /** Asks your partner for a walk. They see the invite on their map. */

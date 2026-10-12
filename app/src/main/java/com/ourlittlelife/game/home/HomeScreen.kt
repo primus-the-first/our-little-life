@@ -176,6 +176,27 @@ fun HomeScreen(viewModel: GameViewModel = viewModel(), onBackToLobby: () -> Unit
         }
     }
 
+    if (viewModel.racing) {
+        val other = viewModel.partner
+        Dialog(
+            onDismissRequest = viewModel::closeRace,
+            properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
+        ) {
+            RaceTrack(
+                runner = viewModel.myOutfit,
+                ghost = other?.takeIf { it.bestLapMillis != null }?.let { viewModel.outfitFor(it.id) },
+                ghostName = other?.character?.name,
+                ghostMillis = other?.bestLapMillis,
+                bestMillis = viewModel.myBestLap,
+                stamina = viewModel.startStamina,
+                outcome = viewModel.lastRace,
+                onFinish = viewModel::finishLap,
+                onAgain = viewModel::raceAgain,
+                onClose = viewModel::closeRace,
+            )
+        }
+    }
+
     if (needsOpen) {
         NeedsSheet(viewModel = viewModel, onDismiss = { needsOpen = false }, onBackToLobby = onBackToLobby)
     }
@@ -693,10 +714,7 @@ private fun SleepHereButton(viewModel: GameViewModel) {
     )
 }
 
-private fun comingSoon(kind: ObjectKind): String = when (kind) {
-    ObjectKind.RACE_SIGN -> "The racecourse is fenced off for now. Races are on the way."
-    else -> "Nothing to do here yet."
-}
+private fun comingSoon(kind: ObjectKind): String = "Nothing to do here yet."
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

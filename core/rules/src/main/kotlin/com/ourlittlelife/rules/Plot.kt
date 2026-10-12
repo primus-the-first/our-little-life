@@ -93,7 +93,8 @@ object ObjectActions {
         ObjectKind.WORKBENCH -> listOf(Refining.sawPlanks, Refining.fireBricks, Refining.weaveCloth)
         ObjectKind.BENCH -> listOf(StarterActions.stargaze, Outdoors.sit, Together.picnic)
         ObjectKind.TRAILHEAD -> listOf(Walks.alone)
-        // The chest just shows what's stored; the racecourse isn't open yet.
-        ObjectKind.CHEST, ObjectKind.RACE_SIGN -> emptyList()
+        ObjectKind.RACE_SIGN -> listOf(Races.lap)
+        // The chest just shows what's stored.
+        ObjectKind.CHEST -> emptyList()
     }
 }

@@ -31,6 +31,7 @@ data class Player(
     val inside: Inside? = null,
     val greeting: Greeting? = null,
     val gesturesToday: List<Gesture> = emptyList(),
+    val bestLapMillis: Long? = null,
 ) {
     val tile: Pair<Int, Int> get() = tileX to tileY
 }

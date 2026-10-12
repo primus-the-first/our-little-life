@@ -43,7 +43,7 @@ object WorldMap {
     val HILL = Area(27, 4, 10, 7)
     val POND = Area(4, 23, 9, 6)
 
-    /** Fenced off until races arrive. */
+    /** Fenced all round; laps are run from the sign at the gate. */
     val RACECOURSE = Area(47, 4, 15, 56)
 
     /** Out of the yard north to the hill, west to the pond, east to the racecourse gate, and south round the forest loop. */
