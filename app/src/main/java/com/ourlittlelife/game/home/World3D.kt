@@ -7,7 +7,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
@@ -44,7 +48,9 @@ import io.github.sceneview.rememberView
 import io.github.sceneview.utils.motionEventToRay
 import kotlin.math.abs
 import kotlin.math.atan2
+import kotlin.math.PI
 import kotlin.math.floor
+import kotlin.math.sin
 
 /**
  * World art for the 3D view: the colours of the land and of things not yet modelled. They are the
@@ -68,6 +74,9 @@ private object Palette {
     val trousers = Color(0xFF455A64)
     val skinDark = Color(0xFF7B4A2E)
     val skinLight = Color(0xFFE8C2A0)
+    val shoes = Color(0xFF3E2723)
+    val hair = Color(0xFF2B1B14)
+    val eyes = Color(0xFF1A1A1A)
 }
 
 /** One person in the 3D world: where they stand and how they look. */
@@ -129,19 +138,28 @@ fun World3D(
                 animationSpec = tween(WALK_STEP_MILLIS.toInt(), easing = LinearEasing),
                 label = "walk3d-${figure.name}",
             )
-            val body = remember(figure.name, figure.look) { standIn(engine, materials, figure.look) }
+            val rig = remember(figure.name, figure.look) { PersonRig(engine, materials, figure.look) }
             val last = remember(figure.name) { floatArrayOf(at.x, at.y) }
-            LaunchedEffect(at, body) {
+            LaunchedEffect(at, rig) {
                 val dx = at.x - last[0]
                 val dz = at.y - last[1]
                 if (abs(dx) + abs(dz) > 1e-4f) {
-                    body.rotation = Rotation(y = Math.toDegrees(atan2(dx, dz).toDouble()).toFloat())
+                    rig.root.rotation = Rotation(y = Math.toDegrees(atan2(dx, dz).toDouble()).toFloat())
                 }
-                body.position = Position(at.x + 0.5f, 0f, at.y + 0.5f)
+                rig.moving = at.x != figure.x.toFloat() || at.y != figure.y.toFloat()
+                rig.root.position = Position(at.x + 0.5f, 0f, at.y + 0.5f)
                 last[0] = at.x
                 last[1] = at.y
             }
-            body
+            // Limbs swing while walking and the chest rises and falls at rest, every frame.
+            LaunchedEffect(rig) {
+                val start = withFrameNanos { it }
+                while (true) {
+                    val now = withFrameNanos { it }
+                    rig.pose((now - start) / 1_000_000_000f)
+                }
+            }
+            rig.root
         }
     }
 
@@ -151,14 +169,19 @@ fun World3D(
         animationSpec = tween(400),
         label = "camera",
     )
+    var zoom by remember { mutableFloatStateOf(1f) }
+    var pan by remember { mutableStateOf(Offset.Zero) }
+    LaunchedEffect(focus) { pan = Offset.Zero }
     val camera = rememberCameraNode(engine)
-    LaunchedEffect(target) {
-        camera.position = Position(target.x + CAMERA_BACK, CAMERA_HEIGHT, target.y + CAMERA_BACK)
-        camera.lookAt(Position(target.x, 0.6f, target.y))
+    LaunchedEffect(target, zoom, pan) {
+        val x = target.x + pan.x
+        val z = target.y + pan.y
+        camera.position = Position(x + CAMERA_BACK * zoom, CAMERA_HEIGHT * zoom, z + CAMERA_BACK * zoom)
+        camera.lookAt(Position(x, 0.6f, z))
     }
 
     Scene(
-        modifier = modifier.semantics { contentDescription = "Your world in 3D. Tap the ground to walk, or tap something to use it." },
+        modifier = modifier.semantics { contentDescription = "Your world in 3D. Tap the ground to walk, or tap something to use it. Pinch to zoom, drag to look around." },
         engine = engine,
         view = view,
         modelLoader = models,
@@ -167,6 +190,16 @@ fun World3D(
         cameraManipulator = null,
         childNodes = worldNodes + people,
         onGestureListener = rememberOnGestureListener(
+            onScale = { detector, _, _ ->
+                zoom = (zoom / detector.scaleFactor).coerceIn(MIN_ZOOM, MAX_ZOOM)
+            },
+            onScroll = { _, _, _, distance ->
+                // The camera looks from the south-east, so screen right is world (+x, -z) and screen down is (+x, +z).
+                val k = PAN_PER_PIXEL * zoom
+                val right = distance.x * k
+                val down = -distance.y * k
+                pan = Offset(pan.x + (right - down) * 0.7071f, pan.y + (-right - down) * 0.7071f)
+            },
             onSingleTapConfirmed = { event, _ ->
                 // Where the ray from the finger meets the ground (y = 0) is the tile that was tapped.
                 val ray = view.motionEventToRay(event)
@@ -182,19 +215,82 @@ fun World3D(
 }
 
 /**
- * A stand-in person until clothed character models arrive: a body in a shirt colour for their body
- * choice, and a head in their skin tone.
+ * A person built from simple shapes until clothed character models arrive: shoes, legs, a torso in a
+ * shirt colour, arms with hands, a head in their skin tone with eyes and hair (short for the first
+ * body, longer for the second). Limbs hang from joints, so walking swings them like a real stride.
  */
-private fun standIn(engine: Engine, materials: MaterialLoader, look: Look): Node {
+private class PersonRig(engine: Engine, materials: MaterialLoader, look: Look) {
     val root = Node(engine)
-    val shirt = if (look.body == 1) Palette.shirtB else Palette.shirtA
-    val skin = if (look.skin == 1) Palette.skinLight else Palette.skinDark
-    CylinderNode(engine, radius = 0.2f, height = 0.55f, center = Position(0f, 0.75f, 0f), materialInstance = materials.createColorInstance(shirt)).parent = root
-    CylinderNode(engine, radius = 0.17f, height = 0.5f, center = Position(0f, 0.25f, 0f), materialInstance = materials.createColorInstance(Palette.trousers)).parent = root
-    SphereNode(engine, radius = 0.17f, center = Position(0f, 1.2f, 0f), materialInstance = materials.createColorInstance(skin)).parent = root
-    return root
+    var moving = false
+
+    private val hips = Node(engine).also { it.parent = root }
+    private val legs = listOf(-1f, 1f).map { side -> joint(engine, hips, Position(side * 0.09f, 0.48f, 0f)) }
+    private val chest = Node(engine).also { it.parent = hips }
+    private val arms = listOf(-1f, 1f).map { side -> joint(engine, chest, Position(side * 0.24f, 1.0f, 0f)) }
+
+    init {
+        val skin = materials.createColorInstance(if (look.skin == 1) Palette.skinLight else Palette.skinDark, roughness = 0.7f)
+        val shirt = materials.createColorInstance(if (look.body == 1) Palette.shirtB else Palette.shirtA, roughness = 0.9f)
+        val trousers = materials.createColorInstance(Palette.trousers, roughness = 0.9f)
+        val shoes = materials.createColorInstance(Palette.shoes, roughness = 0.6f)
+        val hair = materials.createColorInstance(Palette.hair, roughness = 0.8f)
+        val eyes = materials.createColorInstance(Palette.eyes, roughness = 0.3f)
+
+        legs.forEach { leg ->
+            CylinderNode(engine, radius = 0.075f, height = 0.44f, center = Position(0f, -0.22f, 0f), materialInstance = trousers).parent = leg
+            CubeNode(engine, size = Size(0.13f, 0.07f, 0.22f), center = Position(0f, -0.45f, 0.04f), materialInstance = shoes).parent = leg
+        }
+        // Torso: the shirt, rounded at the shoulders, over a waistband of trousers.
+        CubeNode(engine, size = Size(0.34f, 0.12f, 0.2f), center = Position(0f, 0.53f, 0f), materialInstance = trousers).parent = chest
+        CylinderNode(engine, radius = 0.17f, height = 0.46f, center = Position(0f, 0.8f, 0f), materialInstance = shirt).parent = chest
+        SphereNode(engine, radius = 0.17f, center = Position(0f, 1.02f, 0f), materialInstance = shirt).parent = chest
+        arms.forEach { arm ->
+            CylinderNode(engine, radius = 0.055f, height = 0.38f, center = Position(0f, -0.19f, 0f), materialInstance = shirt).parent = arm
+            SphereNode(engine, radius = 0.06f, center = Position(0f, -0.41f, 0f), materialInstance = skin).parent = arm
+        }
+        // Neck, head, eyes looking forward (+z), and hair.
+        CylinderNode(engine, radius = 0.06f, height = 0.1f, center = Position(0f, 1.18f, 0f), materialInstance = skin).parent = chest
+        SphereNode(engine, radius = 0.16f, center = Position(0f, 1.36f, 0f), materialInstance = skin).parent = chest
+        listOf(-1f, 1f).forEach { side ->
+            SphereNode(engine, radius = 0.025f, center = Position(side * 0.06f, 1.38f, 0.145f), materialInstance = eyes).parent = chest
+        }
+        SphereNode(engine, radius = 0.165f, center = Position(0f, 1.42f, -0.025f), materialInstance = hair).parent = chest
+        if (look.body == 1) {
+            // Longer hair, falling behind the shoulders.
+            CubeNode(engine, size = Size(0.3f, 0.36f, 0.08f), center = Position(0f, 1.2f, -0.12f), materialInstance = hair).parent = chest
+        }
+    }
+
+    /** Swings legs and arms in opposition while walking, with a little bounce; breathes gently at rest. */
+    fun pose(seconds: Float) {
+        if (moving) {
+            val phase = sin(seconds * STRIDES_PER_SECOND * 2 * PI.toFloat())
+            val swing = phase * 32f
+            legs[0].rotation = Rotation(x = swing)
+            legs[1].rotation = Rotation(x = -swing)
+            arms[0].rotation = Rotation(x = -swing * 0.8f)
+            arms[1].rotation = Rotation(x = swing * 0.8f)
+            hips.position = Position(0f, abs(phase) * 0.04f, 0f)
+        } else {
+            legs.forEach { it.rotation = Rotation() }
+            arms[0].rotation = Rotation(z = 4f)
+            arms[1].rotation = Rotation(z = -4f)
+            hips.position = Position(0f, sin(seconds * 1.6f) * 0.008f, 0f)
+        }
+    }
+
+    private fun joint(engine: Engine, parent: Node, at: Position) = Node(engine).also {
+        it.parent = parent
+        it.position = at
+    }
 }
 
+/** Strides per second at walking pace: one stride per tile, a tile per step of the game. */
+private val STRIDES_PER_SECOND = 1000f / WALK_STEP_MILLIS / 2f
+
+private const val MIN_ZOOM = 0.45f
+private const val MAX_ZOOM = 3.2f
+private const val PAN_PER_PIXEL = 0.012f
 private const val CAMERA_BACK = 6f
 private const val CAMERA_HEIGHT = 7.5f
 
