@@ -23,6 +23,14 @@ class WorldTest {
     }
 
     @Test
+    fun `each player picks their own look, and it survives saving`() {
+        val styled = Worlds.setLook(pair, "maya", Look(body = 0, skin = 1))
+        assertEquals(Look(body = 0, skin = 1), styled.player("maya").look)
+        assertEquals(null, styled.player("jo").look)
+        assertEquals(styled, Worlds.decode(Worlds.encode(styled)))
+    }
+
+    @Test
     fun `invite codes are 6 easy-to-read characters`() {
         val codes = (1..200).map { Worlds.newCode(Random(it)) }
         codes.forEach { code ->

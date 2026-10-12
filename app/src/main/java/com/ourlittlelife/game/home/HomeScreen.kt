@@ -277,9 +277,9 @@ private fun MapArea(viewModel: GameViewModel, focus: Pair<Int, Int>, modifier: M
             World3D(
                 plot = viewModel.plot,
                 figures = listOfNotNull(
-                    Figure3D(character.name, viewModel.characterTile.first, viewModel.characterTile.second, colors.peach),
+                    Figure3D(character.name, viewModel.characterTile.first, viewModel.characterTile.second, viewModel.lookFor(viewModel.myPlayerId)),
                     viewModel.partner?.takeIf { it.inside == null }?.let { other ->
-                        viewModel.partnerTile?.let { (x, y) -> Figure3D(other.character.name, x, y, colors.sky) }
+                        viewModel.partnerTile?.let { (x, y) -> Figure3D(other.character.name, x, y, viewModel.lookFor(other.id)) }
                     },
                 ),
                 focus = viewModel.characterTile,
@@ -1051,6 +1051,33 @@ private fun PersonSheet(playerId: String, viewModel: GameViewModel) {
             Need.entries.forEach { need -> NeedBar(label = need.label, value = person.needs[need]) }
             Text("Skills arrive with careers.", style = OllType.caption, color = colors.inkMuted)
 
+            if (isMe) {
+                val look = viewModel.lookFor(playerId)
+                Text("Your look", style = OllType.heading, color = colors.ink, modifier = Modifier.semantics { heading() })
+                Text("How you appear in the 3D view, to both of you. Proper people with clothes are on the way.", style = OllType.caption, color = colors.inkMuted)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf("Body 1" to 0, "Body 2" to 1).forEach { (label, body) ->
+                        SecondaryButton(
+                            text = label,
+                            detail = if (look.body == body) "Chosen" else null,
+                            enabled = look.body != body,
+                            onClick = { viewModel.chooseLook(look.copy(body = body)) },
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf("Darker skin" to 0, "Lighter skin" to 1).forEach { (label, skin) ->
+                        SecondaryButton(
+                            text = label,
+                            detail = if (look.skin == skin) "Chosen" else null,
+                            enabled = look.skin != skin,
+                            onClick = { viewModel.chooseLook(look.copy(skin = skin)) },
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                }
+            }
             if (!isMe) {
                 Text("Say hello", style = OllType.heading, color = colors.ink, modifier = Modifier.semantics { heading() })
                 Gesture.entries.forEach { gesture ->

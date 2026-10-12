@@ -31,6 +31,7 @@ import com.ourlittlelife.rules.PlaceResult
 import com.ourlittlelife.rules.RaceOutcome
 import com.ourlittlelife.rules.Races
 import com.ourlittlelife.rules.Interiors
+import com.ourlittlelife.rules.Look
 import com.ourlittlelife.rules.ObjectActions
 import com.ourlittlelife.rules.Placement
 import com.ourlittlelife.rules.Player
@@ -117,6 +118,14 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         if (world?.players?.keys?.firstOrNull() == playerId) Sprites.jo else Sprites.maya
 
     val myOutfit: List<Sprite> get() = outfitFor(myId)
+
+    /** How someone looks in 3D: their choice, or until they choose, the first body for the host and the second for whoever joined. */
+    fun lookFor(playerId: String): Look =
+        world?.players?.get(playerId)?.look ?: Look(body = if (world?.players?.keys?.firstOrNull() == playerId) 0 else 1, skin = 0)
+
+    fun chooseLook(look: Look) {
+        commit { w -> Worlds.setLook(w, myId, look) }
+    }
 
     var selection by mutableStateOf<Selection?>(null)
         private set

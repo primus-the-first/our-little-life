@@ -19,6 +19,10 @@ enum class Activity(val label: String) {
     WALK_INVITE("Hoping for a walk"),
 }
 
+/** How a player's character looks: which of the two bodies, and light or dark skin. Null on a player means "not chosen yet". */
+@Serializable
+data class Look(val body: Int = 0, val skin: Int = 0)
+
 /** One person in a world: their character, where they stand, what they're doing, and when they went to bed (epoch millis). */
 @Serializable
 data class Player(
@@ -33,6 +37,7 @@ data class Player(
     val gesturesToday: List<Gesture> = emptyList(),
     val bestLapMillis: Long? = null,
     val fishLog: Map<FishKind, Int> = emptyMap(),
+    val look: Look? = null,
 ) {
     val tile: Pair<Int, Int> get() = tileX to tileY
 }
@@ -157,6 +162,8 @@ object Worlds {
         }
         return current
     }
+
+    fun setLook(world: World, playerId: String, look: Look): World = world.withPlayer(world.player(playerId).copy(look = look))
 
     fun encode(world: World): String = json.encodeToString(World.serializer(), world)
 
