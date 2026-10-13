@@ -190,6 +190,12 @@ fun HomeScreen(viewModel: GameViewModel = viewModel(), onBackToLobby: () -> Unit
                 companionName = viewModel.partnerName,
                 socialBonus = bonus,
                 onClose = viewModel::finishStargazing,
+                scene3d = if (viewModel.view3d) { modifier ->
+                    NightHill3D(
+                        looks = listOfNotNull(viewModel.lookFor(viewModel.myPlayerId), viewModel.partner?.takeIf { bonus > 0 }?.let { viewModel.lookFor(it.id) }),
+                        modifier = modifier,
+                    )
+                } else null,
             )
         }
     }
@@ -225,6 +231,16 @@ fun HomeScreen(viewModel: GameViewModel = viewModel(), onBackToLobby: () -> Unit
                 onFinish = viewModel::finishLap,
                 onAgain = viewModel::raceAgain,
                 onClose = viewModel::closeRace,
+                track3d = if (viewModel.view3d) { runner, ghost, running, modifier ->
+                    RaceTrack3D(
+                        runnerLook = viewModel.lookFor(viewModel.myPlayerId),
+                        ghostLook = other?.takeIf { it.bestLapMillis != null }?.let { viewModel.lookFor(it.id) },
+                        runner = runner,
+                        ghost = ghost,
+                        running = running,
+                        modifier = modifier,
+                    )
+                } else null,
             )
         }
     }

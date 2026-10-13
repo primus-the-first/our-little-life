@@ -67,6 +67,7 @@ fun StarSky(
     companionName: String?,
     socialBonus: Int,
     onClose: () -> Unit,
+    scene3d: (@Composable (Modifier) -> Unit)? = null,
 ) {
     BackHandler(onBack = onClose)
     val stars = remember {
@@ -91,7 +92,9 @@ fun StarSky(
             // Swallow taps so the map underneath can't be poked while the sky is open.
             .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {},
     ) {
-        Canvas(
+        if (scene3d != null) {
+            scene3d(Modifier.fillMaxSize().semantics { contentDescription = "The two of you lying on a blanket under the stars" })
+        } else Canvas(
             modifier = Modifier
                 .fillMaxSize()
                 .semantics { contentDescription = "A night sky full of stars" },

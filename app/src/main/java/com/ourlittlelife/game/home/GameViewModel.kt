@@ -253,6 +253,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         if (before != null && greeting != null && greeting.count > (before.greeting?.count ?: 0)) {
             val who = next.players[greeting.from]?.character?.name ?: "Someone"
             message = "$who ${greeting.gesture.past}."
+            waveFor(mine = false)
         }
 
         // Your partner said yes to your walk: play it here too, with them leading.
@@ -386,6 +387,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             Gesture.HIGH_FIVE -> "High five with $name."
             Gesture.HUG -> "You hugged $name."
         } + if (counts) " +${gesture.social} social." else ""
+        waveFor(mine = true)
         commit(onSaved = { applied -> if (!applied) message = "$name is out of reach now." }) { w -> Together.greet(here(w), myId, gesture) }
     }
 
@@ -912,14 +914,39 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     /** How the body looks while doing [action] in 3D: lying for naps, sitting for rests and meals, busy hands otherwise. */
     private fun poseFor(action: Action): Pose3D = when (action.id) {
         "nap_tent", "nap_bed" -> Pose3D.LIE
+        "chop_wood", "break_rock" -> Pose3D.CHOP
         "sit_bench", "sit_chair", "sit_sofa", "meal_table", "read_book", "picnic", "fire_stories" -> Pose3D.SIT
         else -> Pose3D.WORK
     }
 
     /** Your pose in 3D: asleep is lying down; otherwise whatever you're busy with, or walking and standing. */
-    val myPose: Pose3D get() = if (ready && character.asleep) Pose3D.LIE else busy?.pose ?: Pose3D.AUTO
+    val myPose: Pose3D get() = when {
+        ready && character.asleep -> Pose3D.LIE
+        waving -> Pose3D.WAVE
+        else -> busy?.pose ?: Pose3D.AUTO
+    }
 
-    fun poseOf(player: Player): Pose3D = if (player.character.asleep) Pose3D.LIE else Pose3D.AUTO
+    fun poseOf(player: Player): Pose3D = when {
+        player.character.asleep -> Pose3D.LIE
+        partnerWaving && player.id == partner?.id -> Pose3D.WAVE
+        else -> Pose3D.AUTO
+    }
+
+    /** True for a moment after you greet your partner: your figure waves. */
+    var waving by mutableStateOf(false)
+        private set
+
+    /** True for a moment after your partner greets you: their figure waves on your screen. */
+    var partnerWaving by mutableStateOf(false)
+        private set
+
+    private fun waveFor(mine: Boolean) {
+        if (mine) waving = true else partnerWaving = true
+        viewModelScope.launch {
+            delay(WAVE_MILLIS)
+            if (mine) waving = false else partnerWaving = false
+        }
+    }
 
     /**
      * Where someone lies when lying down in a room with a bed: their side of the first bed (the host on
@@ -977,5 +1004,8 @@ private const val PLAY_OUT_MAX_MINUTES = 90
 /** How much faster an action plays out when you hurry it. */
 private const val HURRY_SPEED = 5f
 
+/** How long a wave lasts on screen after a greeting. */
+private const val WAVE_MILLIS = 2_600L
+
 /** How long each step takes. The canvas glides a character across a tile in exactly this time. */
-const val WALK_STEP_MILLIS = 140L
+const val WALK_STEP_MILLIS = 240L

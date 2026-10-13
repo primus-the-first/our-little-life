@@ -48,6 +48,9 @@ import io.github.sceneview.node.ModelNode
 import io.github.sceneview.node.Node
 import io.github.sceneview.rememberCameraNode
 import io.github.sceneview.rememberOnGestureListener
+import io.github.sceneview.rememberRenderer
+import io.github.sceneview.math.Scale
+import androidx.compose.runtime.rememberUpdatedState
 import io.github.sceneview.rememberView
 import io.github.sceneview.utils.motionEventToRay
 import kotlin.math.abs
@@ -70,6 +73,10 @@ private object Palette {
     val fence = Color(0xFF8A5A3C)
     val floor = Color(0xFFC8A06E)
     val wall = Color(0xFFEEE3D0)
+    val nightGrass = Color(0xFF1B3A24)
+    val blanket = Color(0xFFB0413E)
+    val starlight = Color(0xFFFFF6D8)
+    val moon = Color(0xFFF2EFD9)
     val tent = Color(0xFF4DB6AC)
     val fire = Color(0xFFFF7043)
     val wood = Color(0xFF8D6E63)
@@ -99,7 +106,7 @@ private object Palette {
 }
 
 /** What a person's body is doing: walking or standing on its own ([AUTO]), sitting, lying down, or busy with their hands. */
-enum class Pose3D { AUTO, SIT, LIE, WORK }
+enum class Pose3D { AUTO, SIT, LIE, WORK, CHOP, WAVE }
 
 /**
  * One person in the 3D world: where they stand, how they look, and their pose. [restAt] puts them
@@ -206,6 +213,215 @@ fun Room3D(
 }
 
 /**
+ * Stargazing in 3D: a navy night with stars and a moon, a grassy hilltop with a blanket, and the two of
+ * you lying on it, looking up. The camera sits low, so most of the screen is sky.
+ */
+@Composable
+fun NightHill3D(looks: List<Look>, modifier: Modifier = Modifier) {
+    val (engine, models, materials) = Shared3D.get(LocalContext.current)
+    val view = rememberView(engine)
+    val renderer = rememberRenderer(engine).apply {
+        clearOptions = clearOptions.apply {
+            clear = true
+            clearColor = floatArrayOf(0.02f, 0.03f, 0.09f, 1f)
+        }
+    }
+    val sky = rememberCached("night-hill") { buildNightHill(engine, materials) }
+    val bodies = looks.mapIndexed { i, look ->
+        remember(look, i) { Shared3D.rig(Triple("sky", i, look)) { makeBody(engine, models, materials, look) } }
+    }
+    LaunchedEffect(bodies) {
+        val start = withFrameNanos { it }
+        while (true) {
+            val now = withFrameNanos { it }
+            bodies.forEachIndexed { i, body ->
+                body.stance = Pose3D.LIE
+                body.inBed = true
+                body.moving = false
+                body.lift = 0.36f
+                body.facing = 0f
+                body.anchor = Position(-0.42f + i * 0.84f, 0f, 0.95f)
+                body.pose((now - start) / 1_000_000_000f)
+            }
+        }
+    }
+    val camera = rememberCameraNode(engine) {
+        position = Position(3.0f, 1.05f, 3.2f)
+        lookAt(Position(0f, 1.25f, 0f))
+    }
+    Scene(
+        modifier = modifier,
+        engine = engine,
+        view = view,
+        renderer = renderer,
+        modelLoader = models,
+        materialLoader = materials,
+        cameraNode = camera,
+        cameraManipulator = null,
+        childNodes = sky + bodies.map { it.root },
+    )
+}
+
+private fun buildNightHill(engine: Engine, materials: MaterialLoader): List<Node> {
+    val nodes = mutableListOf<Node>()
+    val random = kotlin.random.Random(11)
+    // The hill: a big flattened sphere whose top is just above the ground, and a blanket on it.
+    nodes += SphereNode(engine, radius = 1f, center = Position(0f), materialInstance = materials.createColorInstance(Palette.nightGrass, roughness = 1f)).apply {
+        position = Position(0f, -0.9f, 0f)
+        scale = Scale(7f, 1.25f, 7f)
+    }
+    nodes += CubeNode(engine, size = Size(1.8f, 0.03f, 2.1f), center = Position(0f, 0.33f, 0f), materialInstance = materials.createColorInstance(Palette.blanket, roughness = 1f))
+    // Stars on a dome over the part of the sky the camera looks at, and a pale moon.
+    val star = materials.createColorInstance(Palette.starlight, roughness = 1f)
+    repeat(160) {
+        val azimuth = Math.toRadians(225.0 + (random.nextDouble() - 0.5) * 150.0)
+        val elevation = Math.toRadians(4.0 + random.nextDouble() * 60.0)
+        val r = 34.0
+        nodes += SphereNode(engine, radius = 0.05f + random.nextFloat() * 0.09f, center = Position(0f), materialInstance = star).apply {
+            position = Position(
+                (r * kotlin.math.cos(elevation) * kotlin.math.sin(azimuth)).toFloat(),
+                (r * kotlin.math.sin(elevation)).toFloat(),
+                (r * kotlin.math.cos(elevation) * kotlin.math.cos(azimuth)).toFloat(),
+            )
+        }
+    }
+    nodes += SphereNode(engine, radius = 1.6f, center = Position(0f), materialInstance = materials.createColorInstance(Palette.moon, roughness = 1f)).apply {
+        position = Position(-20f, 16f, -22f)
+    }
+    return nodes
+}
+
+/**
+ * A lap of the racecourse in 3D: a stadium with a dirt track, a fence, a start line and trees, your
+ * figure running round it as fast as you tap, and your partner's best lap in the inner lane. The camera
+ * follows from behind. [runner] and [ghost] are how far round the lap each is, from 0 to 1.
+ */
+@Composable
+fun RaceTrack3D(runnerLook: Look, ghostLook: Look?, runner: Float, ghost: Float?, running: Boolean, modifier: Modifier = Modifier) {
+    val (engine, models, materials) = Shared3D.get(LocalContext.current)
+    val view = rememberView(engine)
+    val stadium = rememberCached("stadium") { buildStadium(engine, models, materials) }
+    val me = remember(runnerLook) { Shared3D.rig(Triple("race", "me", runnerLook)) { makeBody(engine, models, materials, runnerLook) } }
+    val them = ghostLook?.let { look -> remember(look) { Shared3D.rig(Triple("race", "ghost", look)) { makeBody(engine, models, materials, look) } } }
+    val now by rememberUpdatedState(Triple(runner, ghost, running))
+    val camera = rememberCameraNode(engine)
+    LaunchedEffect(me, them) {
+        val start = withFrameNanos { it }
+        while (true) {
+            val t = withFrameNanos { it }
+            val seconds = (t - start) / 1_000_000_000f
+            val (mine, theirs, moving) = now
+            val (spot, heading) = stadiumAt(mine)
+            place(me, spot, heading, lane = 0.75f, moving = moving)
+            me.pose(seconds)
+            if (them != null) {
+                val (ghostSpot, ghostHeading) = stadiumAt(theirs ?: 0f)
+                place(them, ghostSpot, ghostHeading, lane = -0.75f, moving = moving && theirs != null && theirs < 1f)
+                them.pose(seconds)
+            }
+            val radians = Math.toRadians(heading.toDouble())
+            val fx = kotlin.math.sin(radians).toFloat()
+            val fz = kotlin.math.cos(radians).toFloat()
+            camera.position = Position(spot.x - fx * 7f, 4.5f, spot.z - fz * 7f)
+            camera.lookAt(Position(spot.x + fx * 3f, 0.8f, spot.z + fz * 3f))
+        }
+    }
+    Scene(
+        modifier = modifier,
+        engine = engine,
+        view = view,
+        modelLoader = models,
+        materialLoader = materials,
+        cameraNode = camera,
+        cameraManipulator = null,
+        childNodes = stadium + listOfNotNull(me.root, them?.root),
+    )
+}
+
+/** Puts a runner on their lane: [lane] metres to the outside (+) or inside (-) of the track's middle. */
+private fun place(body: Body3D, spot: Position, heading: Float, lane: Float, moving: Boolean) {
+    val radians = Math.toRadians(heading.toDouble())
+    val nx = -kotlin.math.cos(radians).toFloat()
+    val nz = kotlin.math.sin(radians).toFloat()
+    body.anchor = Position(spot.x + nx * lane, 0f, spot.z + nz * lane)
+    body.facing = heading
+    body.moving = moving
+    body.stance = Pose3D.AUTO
+    body.inBed = false
+}
+
+private const val STADIUM_STRAIGHT = 30f
+private const val STADIUM_RADIUS = 11f
+private val STADIUM_LENGTH = 2 * STADIUM_STRAIGHT + 2 * PI.toFloat() * STADIUM_RADIUS
+
+/**
+ * Where on the track [fraction] of a lap is, and which way a runner faces there (degrees, in the same
+ * sense as walking). The lap starts at the bottom of the right-hand straight and runs anticlockwise
+ * seen from above.
+ */
+private fun stadiumAt(fraction: Float): Pair<Position, Float> {
+    var d = fraction.coerceIn(0f, 1f) * STADIUM_LENGTH
+    val s = STADIUM_STRAIGHT
+    val r = STADIUM_RADIUS
+    fun heading(dx: Float, dz: Float) = Math.toDegrees(atan2(dx, dz).toDouble()).toFloat()
+    if (d <= s) return Position(r, 0f, s / 2 - d) to heading(0f, -1f)
+    d -= s
+    val arc = PI.toFloat() * r
+    if (d <= arc) {
+        val a = d / r
+        return Position(r * kotlin.math.cos(a), 0f, -s / 2 - r * sin(a)) to heading(-sin(a), -kotlin.math.cos(a))
+    }
+    d -= arc
+    if (d <= s) return Position(-r, 0f, -s / 2 + d) to heading(0f, 1f)
+    d -= s
+    val a = PI.toFloat() + d / r
+    return Position(r * kotlin.math.cos(a), 0f, s / 2 - r * sin(a)) to heading(-sin(a), -kotlin.math.cos(a))
+}
+
+private fun buildStadium(engine: Engine, models: ModelLoader, materials: MaterialLoader): List<Node> {
+    val nodes = mutableListOf<Node>()
+    val grass = materials.createColorInstance(Palette.grass, roughness = 1f)
+    val dirt = materials.createColorInstance(Palette.track, roughness = 1f)
+    val fence = materials.createColorInstance(Palette.fence, roughness = 0.9f)
+    val line = materials.createColorInstance(Palette.wall, roughness = 0.9f)
+    nodes += CubeNode(engine, size = Size(70f, 0.1f, 100f), center = Position(0f, -0.05f, 0f), materialInstance = grass)
+    val pieces = 64
+    for (i in 0 until pieces) {
+        val (spot, heading) = stadiumAt((i + 0.5f) / pieces)
+        val length = STADIUM_LENGTH / pieces + 0.15f
+        nodes += CubeNode(engine, size = Size(3.4f, 0.04f, length), center = Position(0f), materialInstance = dirt).apply {
+            position = Position(spot.x, 0.02f, spot.z)
+            rotation = Rotation(y = heading)
+        }
+        // A low fence rail just outside the track.
+        val radians = Math.toRadians(heading.toDouble())
+        val nx = -kotlin.math.cos(radians).toFloat()
+        val nz = kotlin.math.sin(radians).toFloat()
+        nodes += CubeNode(engine, size = Size(0.08f, 0.55f, length), center = Position(0f), materialInstance = fence).apply {
+            position = Position(spot.x + nx * 2.1f, 0.28f, spot.z + nz * 2.1f)
+            rotation = Rotation(y = heading)
+        }
+    }
+    val (start, startHeading) = stadiumAt(0f)
+    nodes += CubeNode(engine, size = Size(3.4f, 0.05f, 0.3f), center = Position(0f), materialInstance = line).apply {
+        position = Position(start.x, 0.03f, start.z)
+        rotation = Rotation(y = startHeading)
+    }
+    // Trees around the outside.
+    val random = kotlin.random.Random(5)
+    val spots = (0 until 18).map {
+        val (spot, heading) = stadiumAt(random.nextFloat())
+        val radians = Math.toRadians(heading.toDouble())
+        val out = 6f + random.nextFloat() * 6f
+        Position(spot.x - kotlin.math.cos(radians).toFloat() * out, 0f, spot.z + sin(radians.toFloat()) * out)
+    }
+    models.createInstancedModel("models/tree_1.glb", spots.size).zip(spots).forEach { (instance, at) ->
+        nodes += placed(engine, ModelNode(instance, autoAnimate = false, scaleToUnits = 3.2f), at, (at.x * 37).rem(360f))
+    }
+    return nodes
+}
+
+/**
  * One 3D engine and model loader for the whole game, made the first time they're needed and kept for
  * as long as the app runs. Each view used to make its own and destroy it on closing, and going inside
  * or heading out would tear an engine down while the old view was still finishing a frame: a crash.
@@ -271,12 +487,18 @@ private fun TiltedScene(
             )
             val rig = remember(figure.name, figure.look) { Shared3D.rig(figure.name to figure.look) { makeBody(engine, models, materials, figure.look) } }
             val last = remember(figure.name) { floatArrayOf(at.x, at.y) }
+            // Which way they're heading, and when they last moved: a walk keeps going across tile
+            // boundaries instead of stopping for an instant at every tile.
+            val heading = remember(figure.name) { floatArrayOf(rig.facing) }
+            val movedAt = remember(figure.name) { LongArray(1) }
             LaunchedEffect(at, rig, figure.pose, figure.restAt) {
                 val dx = at.x - last[0]
                 val dz = at.y - last[1]
                 val rest = figure.restAt
-                if (abs(dx) + abs(dz) > 1e-4f) rig.facing = Math.toDegrees(atan2(dx, dz).toDouble()).toFloat()
-                rig.moving = at.x != figure.x.toFloat() || at.y != figure.y.toFloat()
+                if (abs(dx) + abs(dz) > 1e-4f) {
+                    heading[0] = Math.toDegrees(atan2(dx, dz).toDouble()).toFloat()
+                    movedAt[0] = System.nanoTime()
+                }
                 rig.stance = figure.pose
                 rig.lift = rest?.y ?: 0f
                 rig.inBed = rest != null
@@ -284,11 +506,18 @@ private fun TiltedScene(
                 last[0] = at.x
                 last[1] = at.y
             }
-            // Limbs swing while walking and the chest rises and falls at rest, every frame.
+            // Every frame: still walking or not, turn a little towards the heading (so zig-zag steps read as
+            // a smooth diagonal), and animate.
             LaunchedEffect(rig) {
                 val start = withFrameNanos { it }
+                var previous = start
                 while (true) {
                     val now = withFrameNanos { it }
+                    val dt = (now - previous) / 1_000_000_000f
+                    previous = now
+                    rig.moving = System.nanoTime() - movedAt[0] < (WALK_STEP_MILLIS + 90) * 1_000_000
+                    val turn = ((heading[0] - rig.facing + 540f) % 360f) - 180f
+                    rig.facing += turn * minOf(1f, dt * TURN_RATE)
                     rig.pose((now - start) / 1_000_000_000f)
                 }
             }
@@ -402,7 +631,9 @@ private class PersonModel(models: ModelLoader, look: Look) : Body3D {
         when {
             // The models have no sleeping clip: a calm, straight-legged stance laid flat reads as lying down.
             lying -> play("Idle_Neutral", speed = 0.4f)
-            moving -> play("Run", speed = 1.3f)
+            moving -> play("Run", speed = RUN_SPEED)
+            stance == Pose3D.CHOP -> play("Sword_Slash")
+            stance == Pose3D.WAVE -> play("Wave")
             stance == Pose3D.WORK -> play("Interact")
             stance == Pose3D.SIT -> play("Idle_Neutral")
             else -> play("Idle")
@@ -436,6 +667,9 @@ private class PersonModel(models: ModelLoader, look: Look) : Body3D {
     companion object {
         /** How tall people stand, in metres (one tile is a metre). */
         const val HEIGHT = 1.75f
+
+        /** The run clip's speed, so feet keep pace with the ground at a tile per walking step. */
+        val RUN_SPEED = 240f / WALK_STEP_MILLIS
 
         /** Skin tones in linear colour, by Look.skin: deep, light, brown, tan. */
         val SKIN_TONES = listOf(
@@ -524,7 +758,7 @@ private class PersonRig(engine: Engine, materials: MaterialLoader, look: Look) :
             hips.position = Position(0f, sin(seconds * 1.6f) * 0.006f, 0f)
             return
         }
-        if (stance == Pose3D.WORK && !moving) {
+        if ((stance == Pose3D.WORK || stance == Pose3D.CHOP || stance == Pose3D.WAVE) && !moving) {
             val stroke = -55f + sin(seconds * 6f) * 35f
             legs[0].rotation = Rotation(x = 8f)
             legs[1].rotation = Rotation(x = -8f)
@@ -558,6 +792,9 @@ private class PersonRig(engine: Engine, materials: MaterialLoader, look: Look) :
 private val STRIDES_PER_SECOND = 1000f / WALK_STEP_MILLIS / 2f
 
 private const val CACHE_SIZE = 12
+
+/** How quickly people turn to face where they're walking: higher is snappier. */
+private const val TURN_RATE = 9f
 private const val MIN_ZOOM = 0.45f
 private const val MAX_ZOOM = 3.2f
 private const val PAN_PER_PIXEL = 0.012f

@@ -96,6 +96,7 @@ fun RaceTrack(
     onFinish: (Long) -> Unit,
     onAgain: () -> Unit,
     onClose: () -> Unit,
+    track3d: (@Composable (runner: Float, ghost: Float?, running: Boolean, modifier: Modifier) -> Unit)? = null,
 ) {
     val colors = OllTheme.colors
     val sheet = ImageBitmap.imageResource(R.drawable.sheet_characters)
@@ -189,7 +190,17 @@ fun RaceTrack(
                 color = colors.inkMuted,
             )
 
-            Canvas(
+            if (track3d != null) {
+                track3d(
+                    progress / LAP,
+                    ghostMillis?.let { if (phase == Phase.READY || phase == Phase.COUNTDOWN) 0f else (elapsed.toFloat() / it).coerceAtMost(1f) },
+                    phase == Phase.RUNNING && speed > 0.4f,
+                    Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(16.dp)),
+                )
+            } else Canvas(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()

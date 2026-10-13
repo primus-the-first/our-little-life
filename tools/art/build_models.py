@@ -56,8 +56,8 @@ CLOTHED = {
     'person_0_0': (MODULAR_MEN, 'Casual_Hoodie'), 'person_0_1': (MODULAR_MEN, 'Casual_2'), 'person_0_2': (MODULAR_MEN, 'Farmer'),
     'person_1_0': (MODULAR_WOMEN, 'Casual'), 'person_1_1': (MODULAR_WOMEN, 'Formal'), 'person_1_2': (MODULAR_WOMEN, 'Worker'),
 }
-# The clothed people's clips the game uses: standing, walking, running, waving and busy hands.
-CLOTHED_CLIPS = ['Idle', 'Idle_Neutral', 'Walk', 'Run', 'Wave', 'Interact']
+# The clothed people's clips the game uses: standing, walking, running, waving, busy hands, and a swing for chopping.
+CLOTHED_CLIPS = ['Idle', 'Idle_Neutral', 'Walk', 'Run', 'Wave', 'Interact', 'Sword_Slash']
 
 # Animation clips the game plays, by their names in the Universal Animation Library.
 CLIPS = [
