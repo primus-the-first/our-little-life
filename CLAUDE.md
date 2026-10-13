@@ -36,7 +36,8 @@ Kotlin, Jetpack Compose, Material 3. Firebase (Auth, Firestore, Storage, Cloud F
 - Run rules tests: `./gradlew :core:rules:test`
 - Build debug APK: `./gradlew :app:assembleDebug`
 - Install on a connected phone: `adb install -r -t app/build/outputs/apk/debug/app-debug.apk`
-- Publish a release to friends' phones: bump `versionCode` and `versionName` in `app/build.gradle.kts`, commit, then `tools/release.sh "What's new"`. It builds the signed release and force-pushes the APK and `latest.json` to the `releases` branch; the game offers the update when it next opens. Release signing needs `keystore.properties` and the key it points to (both git-ignored, backed up outside the repo). Debug builds are signed with a different key, so they never offer updates.
+- Publish a release to friends' phones: bump `versionCode` and `versionName` in `app/build.gradle.kts`, commit, then `tools/release.sh "What's new"`. It builds the release, signs it, and force-pushes the APK and `latest.json` to the `releases` branch; the game offers the update when it next opens. `tools/release.sh --build-only` makes the signed APK in `dist/` without publishing. Only APKs from the script are signed correctly; a plain `assembleRelease` lacks the rotation proof.
+- Signing: the first phones ran debug builds, so releases are signed with the release key plus `tools/signing/debug-to-release.lineage` (a public proof, signed by the debug key, that the release key replaces it), and with the debug key for Android 8. Phones install them as normal updates and keep their saves. Signing needs `keystore.properties`, the key it points to, and `~/.android/debug.keystore`: never commit them, keep backups outside the repo. Debug builds don't offer updates.
 
 Running Gradle from Claude Code's shell on this machine fails with "Unable to establish loopback connection" unless Java gets a short temp folder. Use:
 

@@ -30,7 +30,7 @@ object Updater {
 
     /**
      * The newest published version, if it's newer than this one; null if not, or if we can't tell (offline).
-     * Debug builds never offer updates: they're signed with a different key, so Android would refuse them.
+     * Debug builds never offer updates: they're for testing, and an update would replace the build being tested.
      */
     suspend fun newer(): Release? = if (BuildConfig.DEBUG) null else withContext(Dispatchers.IO) {
         runCatching {

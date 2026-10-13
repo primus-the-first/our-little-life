@@ -28,7 +28,8 @@ android {
     }
 
     // Release builds are signed with the key in keystore.properties (never committed; see CLAUDE.md).
-    // Every update must use the same key, or phones refuse to install it.
+    // Every update must use the same key, or phones refuse to install it. tools/release.sh then adds the
+    // proof that this key replaces the debug key the first phones were on (see CLAUDE.md).
     val signing = rootProject.file("keystore.properties").takeIf { it.exists() }?.let { file ->
         Properties().apply { file.inputStream().use(::load) }
     }
