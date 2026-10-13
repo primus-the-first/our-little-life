@@ -76,6 +76,7 @@ cp "$APK" "$WORK/our-little-life.apk"
 (
   cd "$WORK"
   git init -q -b "$BRANCH"
+  git config core.autocrlf false
   git add our-little-life.apk
   git commit -q -m "Our Little Life $NAME"
   APK_COMMIT=$(git rev-parse HEAD)
