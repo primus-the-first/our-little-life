@@ -11,6 +11,7 @@ Needs Pillow. Reads only model files; nothing in the art folders is executed.
 """
 import io
 import json
+import math
 import os
 import struct
 import sys
@@ -58,6 +59,15 @@ CLOTHED = {
 }
 # The clothed people's clips the game uses: standing, walking, running, waving, busy hands, and a swing for chopping.
 CLOTHED_CLIPS = ['Idle', 'Idle_Neutral', 'Walk', 'Run', 'Wave', 'Interact', 'Sword_Slash']
+# Sitting, which the clothed packs have no clips for: made from the calm standing pose by bending hips and
+# knees (see sit_clip). 'hips' is how high the hip joints sit, in the model's own units (a unit is 0.94 m
+# in the game); legs are solved so the feet rest on the floor. 'lean' tips the upper body back, and 'arms'
+# swings the upper and lower arms forward and the whole arm in, in degrees, so the hands rest on the thighs.
+SIT_CLIPS = {
+    'Sit': {'hips': 0.565, 'lean': 0, 'arms': (32, 14, 8), 'ground': False},  # a chair or bench
+    'Sit_Low': {'hips': 0.43, 'lean': 8, 'arms': (36, 10, 8), 'ground': False},  # a low sofa
+    'Sit_Ground': {'hips': 0.09, 'lean': 6, 'arms': (12, 20, 6), 'ground': True},  # on the ground, legs out in front
+}
 
 # Animation clips the game plays, by their names in the Universal Animation Library.
 CLIPS = [
@@ -246,6 +256,150 @@ def add_accessor(doc, blob, data, kind, mins=None, maxs=None):
     return len(doc['accessors']) - 1
 
 
+# ---------------------------------------------------------------- poses
+
+def accessor_values(doc, blob, index):
+    """A float accessor's values, one tuple per element."""
+    acc = doc['accessors'][index]
+    width = COMPONENTS[acc['type']]
+    view = doc['bufferViews'][acc['bufferView']]
+    start = view.get('byteOffset', 0) + acc.get('byteOffset', 0)
+    values = struct.unpack_from(f'<{acc["count"] * width}f', blob, start)
+    return [values[k * width:(k + 1) * width] for k in range(acc['count'])]
+
+
+def q_mul(a, b):
+    ax, ay, az, aw = a
+    bx, by, bz, bw = b
+    return (aw * bx + ax * bw + ay * bz - az * by, aw * by - ax * bz + ay * bw + az * bx,
+            aw * bz + ax * by - ay * bx + az * bw, aw * bw - ax * bx - ay * by - az * bz)
+
+
+def q_inv(q):
+    return (-q[0], -q[1], -q[2], q[3])
+
+
+def q_rotate(q, v):
+    return q_mul(q_mul(q, (v[0], v[1], v[2], 0.0)), q_inv(q))[:3]
+
+
+def q_axis(axis, degrees):
+    s = math.sin(math.radians(degrees) / 2)
+    return (axis[0] * s, axis[1] * s, axis[2] * s, math.cos(math.radians(degrees) / 2))
+
+
+def q_between(a, b):
+    """The smallest rotation turning direction a to direction b."""
+    a, b = unit(a), unit(b)
+    cross = (a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0])
+    dot = sum(a[i] * b[i] for i in range(3))
+    q = (cross[0], cross[1], cross[2], 1.0 + dot)
+    n = math.sqrt(sum(c * c for c in q))
+    return tuple(c / n for c in q)
+
+
+def unit(v):
+    n = math.sqrt(sum(c * c for c in v))
+    return tuple(c / n for c in v)
+
+
+def sit_clip(src, src_blob, doc, blob, name, hips, lean, arms, ground):
+    """
+    A held sitting pose for a clothed character, made from the first frame of its calm standing clip.
+    The characters face +z, bones point along their own +y, and the feet hang from the root (they're IK
+    targets), not from the shins, so each foot is moved to wherever its bent shin now ends.
+    """
+    nodes = src['nodes']
+    index = {n.get('name'): i for i, n in enumerate(nodes)}
+    parent = {c: i for i, n in enumerate(nodes) for c in n.get('children', [])}
+    T = {i: tuple(n.get('translation', (0.0, 0.0, 0.0))) for i, n in enumerate(nodes)}
+    R = {i: tuple(n.get('rotation', (0.0, 0.0, 0.0, 1.0))) for i, n in enumerate(nodes)}
+    S = {i: tuple(n.get('scale', (1.0, 1.0, 1.0))) for i, n in enumerate(nodes)}
+    standing = next(a for a in src['animations'] if a['name'] == 'Idle_Neutral')
+    for ch in standing['channels']:
+        value = accessor_values(src, src_blob, standing['samplers'][ch['sampler']]['output'])[0]
+        {'translation': T, 'rotation': R, 'scale': S}[ch['target']['path']][ch['target']['node']] = tuple(value)
+
+    def world(i):
+        if i not in parent:
+            return (0.0, 0.0, 0.0), (0.0, 0.0, 0.0, 1.0)
+        at, turn = world(parent[i])
+        offset = q_rotate(turn, T[i])
+        return tuple(at[k] + offset[k] for k in range(3)), q_mul(turn, R[i])
+
+    def turn_world(i, q):
+        """Turns bone i (and everything hanging from it) by q, in world space, about its own joint."""
+        R[i] = q_mul(q_inv(world(parent[i])[1]), q_mul(q, world(i)[1]))
+
+    def aim(i, direction):
+        turn_world(i, q_between(q_rotate(world(i)[1], (0, 1, 0)), direction))
+
+    floor = world(index['Foot.L'])[0][1]  # ankle height when standing
+    feet = {side: world(index[f'Foot.{side}'])[1] for side in 'LR'}
+    thigh = math.dist(world(index['UpperLeg.L'])[0], world(index['LowerLeg.L'])[0])
+    shin = math.dist(world(index['LowerLeg.L'])[0], world(index['Foot.L'])[0])
+
+    # Lower the whole body (legs and upper body hang from Body) so the hip joints are at the right height.
+    body = index['Body']
+    drop = world(index['UpperLeg.L'])[0][1] - hips
+    down = q_rotate(q_inv(world(parent[body])[1]), (0, -drop, 0))
+    T[body] = tuple(T[body][k] + down[k] for k in range(3))
+
+    for side, out in (('L', 1), ('R', -1)):
+        if ground:
+            # Thighs a little raised, shins sloping down until the heels meet the ground.
+            up = math.radians(6)
+            knee_height = hips + thigh * math.sin(up)
+            slope = math.asin(max(-1.0, min(1.0, (knee_height - floor) / shin)))
+            thigh_dir = (out * 0.1, math.sin(up), math.cos(up))
+            shin_dir = (out * 0.05, -math.sin(slope), math.cos(slope))
+        elif hips - floor > shin:
+            # A high seat: thighs slope down a little so the shins can hang straight to the floor.
+            slope = math.asin(min(1.0, (hips - floor - shin) / thigh))
+            thigh_dir = (out * 0.1, -math.sin(slope), math.cos(slope))
+            shin_dir = (0.0, -1.0, 0.0)
+        else:
+            # A low seat: thighs level, shins sloping forward so the feet still reach the floor.
+            reach = math.acos((hips - floor) / shin)
+            thigh_dir = (out * 0.1, 0.0, 1.0)
+            shin_dir = (0.0, -math.cos(reach), math.sin(reach))
+        aim(index[f'UpperLeg.{side}'], thigh_dir)
+        aim(index[f'LowerLeg.{side}'], shin_dir)
+        knee_at, knee_turn = world(index[f'LowerLeg.{side}'])
+        reach_by = q_rotate(knee_turn, (0, shin, 0))
+        ankle = tuple(knee_at[k] + reach_by[k] for k in range(3))
+        foot = index[f'Foot.{side}']
+        root_at, root_turn = world(parent[foot])
+        T[foot] = q_rotate(q_inv(root_turn), tuple(ankle[k] - root_at[k] for k in range(3)))
+        # Feet flat on the floor, or toes up when the legs are out in front.
+        flat = feet[side]
+        turned = q_mul(q_between((0, 0, 1), (0, 0.8, 0.6)), flat) if ground else flat
+        R[foot] = q_mul(q_inv(root_turn), turned)
+
+    # Upper body leans back a touch; arms swing forward so the hands rest in the lap.
+    if lean:
+        turn_world(index['Hips'], q_axis((1, 0, 0), -lean))
+    upper, lower, inward = arms
+    for side, out in (('L', 1), ('R', -1)):
+        turn_world(index[f'UpperArm.{side}'], q_mul(q_axis((0, 0, 1), -out * inward), q_axis((1, 0, 0), -upper)))
+        turn_world(index[f'LowerArm.{side}'], q_axis((1, 0, 0), -lower))
+
+    # Every bone the standing clip moves, plus the ones bent here, held still for the whole clip.
+    targets = {(ch['target']['node'], ch['target']['path']) for ch in standing['channels']}
+    for bone in ['Body', 'Hips', 'UpperLeg.L', 'LowerLeg.L', 'UpperLeg.R', 'LowerLeg.R', 'Foot.L', 'Foot.R',
+                 'UpperArm.L', 'LowerArm.L', 'UpperArm.R', 'LowerArm.R']:
+        targets.add((index[bone], 'rotation'))
+    for bone in ['Body', 'Foot.L', 'Foot.R']:
+        targets.add((index[bone], 'translation'))
+    times = add_accessor(doc, blob, struct.pack('<2f', 0.0, 1.0), 'SCALAR', [0.0], [1.0])
+    samplers, channels = [], []
+    for node, path in sorted(targets):
+        value, kind = {'translation': (T[node], 'VEC3'), 'rotation': (R[node], 'VEC4'), 'scale': (S[node], 'VEC3')}[path]
+        samplers.append({'input': times, 'output': add_accessor(doc, blob, struct.pack(f'<{len(value)}f', *value) * 2, kind), 'interpolation': 'LINEAR'})
+        channels.append({'sampler': len(samplers) - 1, 'target': {'node': node, 'path': path}})
+    return {'name': name, 'samplers': samplers, 'channels': channels}
+
+
 # ---------------------------------------------------------------- builders
 
 def build_textured(src_path, out_name, max_size=TEXTURE_MAX):
@@ -377,6 +531,8 @@ def build_clothed(folder, name, out_name):
     missing = set(CLOTHED_CLIPS) - {a['name'] for a in doc['animations']}
     if missing:
         sys.exit(f'{name}: missing clips {missing}')
+    for clip, shape in SIT_CLIPS.items():
+        doc['animations'].append(sit_clip(src, src_blob, doc, blob, clip, **shape))
     for m in doc.get('materials', []):
         pbr = m.setdefault('pbrMetallicRoughness', {})
         pbr['metallicFactor'] = 0.0

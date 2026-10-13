@@ -23,8 +23,8 @@ android {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a")
         }
         // tools/release.sh publishes this version to friends' phones; bump both before each release.
-        versionCode = 28
-        versionName = "0.22.0"
+        versionCode = 29
+        versionName = "0.22.1"
     }
 
     // Release builds are signed with the key in keystore.properties (never committed; see CLAUDE.md).

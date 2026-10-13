@@ -21,6 +21,10 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import com.google.android.filament.Engine
 import com.google.android.filament.MaterialInstance
+import com.google.android.filament.Skybox
+import io.github.sceneview.environment.Environment
+import io.github.sceneview.loaders.EnvironmentLoader
+import kotlin.math.pow
 import com.ourlittlelife.rules.Area
 import com.ourlittlelife.rules.Bed
 import com.ourlittlelife.rules.Crop
@@ -32,6 +36,7 @@ import com.ourlittlelife.rules.Gardening
 import com.ourlittlelife.rules.Look
 import com.ourlittlelife.rules.ObjectKind
 import com.ourlittlelife.rules.Plot
+import com.ourlittlelife.rules.PlotObject
 import com.ourlittlelife.rules.RoomKind
 import com.ourlittlelife.rules.WorldMap
 import io.github.sceneview.Scene
@@ -48,7 +53,6 @@ import io.github.sceneview.node.ModelNode
 import io.github.sceneview.node.Node
 import io.github.sceneview.rememberCameraNode
 import io.github.sceneview.rememberOnGestureListener
-import io.github.sceneview.rememberRenderer
 import io.github.sceneview.math.Scale
 import androidx.compose.runtime.rememberUpdatedState
 import io.github.sceneview.rememberView
@@ -73,6 +77,8 @@ private object Palette {
     val fence = Color(0xFF8A5A3C)
     val floor = Color(0xFFC8A06E)
     val wall = Color(0xFFEEE3D0)
+    val daySky = Color(0xFFBFE3F2)
+    val nightSky = Color(0xFF1C2445)
     val nightGrass = Color(0xFF1B3A24)
     val blanket = Color(0xFFB0413E)
     val starlight = Color(0xFFFFF6D8)
@@ -105,12 +111,16 @@ private object Palette {
     val trailBoard = Color(0xFF81C784)
 }
 
-/** What a person's body is doing: walking or standing on its own ([AUTO]), sitting, lying down, or busy with their hands. */
-enum class Pose3D { AUTO, SIT, LIE, WORK, CHOP, WAVE }
+/**
+ * What a person's body is doing: walking or standing on its own ([AUTO]), sitting on a seat ([SIT]) or
+ * on the ground ([SIT_GROUND]), lying down, or busy with their hands.
+ */
+enum class Pose3D { AUTO, SIT, SIT_GROUND, LIE, WORK, CHOP, WAVE }
 
 /**
- * One person in the 3D world: where they stand, how they look, and their pose. [restAt] puts them
- * somewhere exact instead of on their tile, such as their side of the bed.
+ * One person in the 3D world: where they stand, how they look, and their pose. [restAt] puts them on
+ * furniture instead of on their tile: their side of the bed, or a seat, with y the height of its top.
+ * [faceTo] is a point (in tiles) they turn to face when they stop, such as the tree they're chopping.
  */
 data class Figure3D(
     val name: String,
@@ -119,6 +129,7 @@ data class Figure3D(
     val look: Look,
     val pose: Pose3D = Pose3D.AUTO,
     val restAt: Position? = null,
+    val faceTo: Pair<Float, Float>? = null,
 )
 
 /** Model files (in assets/models) and the size each is drawn at, in tiles. */
@@ -173,6 +184,7 @@ fun World3D(
         staticNodes = worldNodes,
         figures = figures,
         focus = focus,
+        area = plot.size.toFloat() to plot.size.toFloat(),
         onTapTile = onTapTile,
         description = "Your world in 3D. Tap the ground to walk, or tap something to use it. Pinch to zoom, drag to look around.",
         modifier = modifier,
@@ -205,6 +217,7 @@ fun Room3D(
         staticNodes = roomNodes + marks,
         figures = figures,
         focus = focus,
+        area = Interiors.width(room.kind).toFloat() to Interiors.height(room.kind).toFloat(),
         onTapTile = onTapTile,
         description = "Inside the ${room.kind.label.lowercase()} in 3D. Tap furniture to use it, or the floor to walk. Pinch to zoom, drag to look around.",
         modifier = modifier,
@@ -214,18 +227,14 @@ fun Room3D(
 
 /**
  * Stargazing in 3D: a navy night with stars and a moon, a grassy hilltop with a blanket, and the two of
- * you lying on it, looking up. The camera sits low, so most of the screen is sky.
+ * you lying on it, looking up. The camera stands past your feet looking the way your heads point, so you
+ * fit across even a narrow portrait screen and the sky fills the rest.
  */
 @Composable
 fun NightHill3D(looks: List<Look>, modifier: Modifier = Modifier) {
     val (engine, models, materials) = Shared3D.get(LocalContext.current)
     val view = rememberView(engine)
-    val renderer = rememberRenderer(engine).apply {
-        clearOptions = clearOptions.apply {
-            clear = true
-            clearColor = floatArrayOf(0.02f, 0.03f, 0.09f, 1f)
-        }
-    }
+    val (environments, night) = Shared3D.sky(LocalContext.current, Palette.nightSky)
     val sky = rememberCached("night-hill") { buildNightHill(engine, materials) }
     val bodies = looks.mapIndexed { i, look ->
         remember(look, i) { Shared3D.rig(Triple("sky", i, look)) { makeBody(engine, models, materials, look) } }
@@ -236,26 +245,29 @@ fun NightHill3D(looks: List<Look>, modifier: Modifier = Modifier) {
             val now = withFrameNanos { it }
             bodies.forEachIndexed { i, body ->
                 body.stance = Pose3D.LIE
-                body.inBed = true
+                body.onFurniture = true
                 body.moving = false
-                body.lift = 0.36f
+                body.lift = 0.4f
                 body.facing = 0f
-                body.anchor = Position(-0.42f + i * 0.84f, 0f, 0.95f)
+                // Side by side on the blanket, or in the middle of it alone.
+                val x = if (bodies.size == 1) 0f else -0.42f + i * 0.84f
+                body.anchor = Position(x, 0f, 0.95f)
                 body.pose((now - start) / 1_000_000_000f)
             }
         }
     }
     val camera = rememberCameraNode(engine) {
-        position = Position(3.0f, 1.05f, 3.2f)
-        lookAt(Position(0f, 1.25f, 0f))
+        position = Position(0.6f, 2.6f, 4.6f)
+        lookAt(Position(0f, 0.9f, -3f))
     }
     Scene(
         modifier = modifier,
         engine = engine,
         view = view,
-        renderer = renderer,
         modelLoader = models,
         materialLoader = materials,
+        environmentLoader = environments,
+        environment = night,
         cameraNode = camera,
         cameraManipulator = null,
         childNodes = sky + bodies.map { it.root },
@@ -270,12 +282,12 @@ private fun buildNightHill(engine: Engine, materials: MaterialLoader): List<Node
         position = Position(0f, -0.9f, 0f)
         scale = Scale(7f, 1.25f, 7f)
     }
-    nodes += CubeNode(engine, size = Size(1.8f, 0.03f, 2.1f), center = Position(0f, 0.33f, 0f), materialInstance = materials.createColorInstance(Palette.blanket, roughness = 1f))
-    // Stars on a dome over the part of the sky the camera looks at, and a pale moon.
+    nodes += CubeNode(engine, size = Size(1.8f, 0.03f, 2.1f), center = Position(0f, 0.375f, 0f), materialInstance = materials.createColorInstance(Palette.blanket, roughness = 1f))
+    // Stars on a dome over the part of the sky the camera looks at (towards -z), and a pale moon off to one side.
     val star = materials.createColorInstance(Palette.starlight, roughness = 1f)
     repeat(160) {
-        val azimuth = Math.toRadians(225.0 + (random.nextDouble() - 0.5) * 150.0)
-        val elevation = Math.toRadians(4.0 + random.nextDouble() * 60.0)
+        val azimuth = Math.toRadians(185.0 + (random.nextDouble() - 0.5) * 120.0)
+        val elevation = Math.toRadians(3.0 + random.nextDouble() * 50.0)
         val r = 34.0
         nodes += SphereNode(engine, radius = 0.05f + random.nextFloat() * 0.09f, center = Position(0f), materialInstance = star).apply {
             position = Position(
@@ -285,8 +297,8 @@ private fun buildNightHill(engine: Engine, materials: MaterialLoader): List<Node
             )
         }
     }
-    nodes += SphereNode(engine, radius = 1.6f, center = Position(0f), materialInstance = materials.createColorInstance(Palette.moon, roughness = 1f)).apply {
-        position = Position(-20f, 16f, -22f)
+    nodes += SphereNode(engine, radius = 0.9f, center = Position(0f), materialInstance = materials.createColorInstance(Palette.moon, roughness = 1f)).apply {
+        position = Position(1.5f, 6f, -20f)
     }
     return nodes
 }
@@ -300,6 +312,7 @@ private fun buildNightHill(engine: Engine, materials: MaterialLoader): List<Node
 fun RaceTrack3D(runnerLook: Look, ghostLook: Look?, runner: Float, ghost: Float?, running: Boolean, modifier: Modifier = Modifier) {
     val (engine, models, materials) = Shared3D.get(LocalContext.current)
     val view = rememberView(engine)
+    val (environments, sky) = Shared3D.sky(LocalContext.current, Palette.daySky)
     val stadium = rememberCached("stadium") { buildStadium(engine, models, materials) }
     val me = remember(runnerLook) { Shared3D.rig(Triple("race", "me", runnerLook)) { makeBody(engine, models, materials, runnerLook) } }
     val them = ghostLook?.let { look -> remember(look) { Shared3D.rig(Triple("race", "ghost", look)) { makeBody(engine, models, materials, look) } } }
@@ -332,6 +345,8 @@ fun RaceTrack3D(runnerLook: Look, ghostLook: Look?, runner: Float, ghost: Float?
         view = view,
         modelLoader = models,
         materialLoader = materials,
+        environmentLoader = environments,
+        environment = sky,
         cameraNode = camera,
         cameraManipulator = null,
         childNodes = stadium + listOfNotNull(me.root, them?.root),
@@ -347,7 +362,7 @@ private fun place(body: Body3D, spot: Position, heading: Float, lane: Float, mov
     body.facing = heading
     body.moving = moving
     body.stance = Pose3D.AUTO
-    body.inBed = false
+    body.onFurniture = false
 }
 
 private const val STADIUM_STRAIGHT = 30f
@@ -446,6 +461,24 @@ private object Shared3D {
         val engine = SceneView.createEngine(SceneView.createEglContext())
         Triple(engine, SceneView.createModelLoader(engine, app), SceneView.createMaterialLoader(engine, app)).also { made = it }
     }
+
+    private var environments: EnvironmentLoader? = null
+    private val skies = HashMap<Color, Environment>()
+
+    /**
+     * SceneView's usual soft lighting under a plain sky of [colour] (its own sky is black), with the loader
+     * it came from. One per colour, kept like everything else here.
+     */
+    fun sky(context: Context, colour: Color): Pair<EnvironmentLoader, Environment> {
+        val engine = get(context).first
+        val loader = environments ?: SceneView.createEnvironmentLoader(engine, context.applicationContext).also { environments = it }
+        return loader to skies.getOrPut(colour) {
+            val lit = SceneView.createEnvironment(loader, isOpaque = true)
+            lit.skybox?.let(engine::destroySkybox)
+            fun linear(c: Float) = c.toDouble().pow(2.2).toFloat()
+            lit.copy(skybox = Skybox.Builder().color(linear(colour.red), linear(colour.green), linear(colour.blue), 1f).build(engine))
+        }
+    }
 }
 
 /**
@@ -470,12 +503,14 @@ private fun TiltedScene(
     staticNodes: List<Node>,
     figures: List<Figure3D>,
     focus: Pair<Int, Int>,
+    area: Pair<Float, Float>,
     onTapTile: (Int, Int) -> Unit,
     description: String,
     modifier: Modifier = Modifier,
     startZoom: Float = 1f,
 ) {
     val view = rememberView(engine)
+    val (environments, sky) = Shared3D.sky(LocalContext.current, Palette.daySky)
 
     // People walk from tile to tile in step with the game, turning to face where they're going.
     val people = figures.map { figure ->
@@ -491,17 +526,20 @@ private fun TiltedScene(
             // boundaries instead of stopping for an instant at every tile.
             val heading = remember(figure.name) { floatArrayOf(rig.facing) }
             val movedAt = remember(figure.name) { LongArray(1) }
-            LaunchedEffect(at, rig, figure.pose, figure.restAt) {
+            LaunchedEffect(at, rig, figure.pose, figure.restAt, figure.faceTo) {
                 val dx = at.x - last[0]
                 val dz = at.y - last[1]
                 val rest = figure.restAt
                 if (abs(dx) + abs(dz) > 1e-4f) {
                     heading[0] = Math.toDegrees(atan2(dx, dz).toDouble()).toFloat()
                     movedAt[0] = System.nanoTime()
+                } else figure.faceTo?.let { (fx, fz) ->
+                    // Stopped to use something: turn to face it.
+                    heading[0] = Math.toDegrees(atan2(fx - at.x - 0.5f, fz - at.y - 0.5f).toDouble()).toFloat()
                 }
                 rig.stance = figure.pose
                 rig.lift = rest?.y ?: 0f
-                rig.inBed = rest != null
+                rig.onFurniture = rest != null
                 rig.anchor = rest?.let { Position(it.x, 0f, it.z) } ?: Position(at.x + 0.5f, 0f, at.y + 0.5f)
                 last[0] = at.x
                 last[1] = at.y
@@ -547,6 +585,8 @@ private fun TiltedScene(
         view = view,
         modelLoader = models,
         materialLoader = materials,
+        environmentLoader = environments,
+        environment = sky,
         cameraNode = camera,
         cameraManipulator = null,
         childNodes = staticNodes + people,
@@ -559,7 +599,12 @@ private fun TiltedScene(
                 val k = PAN_PER_PIXEL * zoom
                 val right = distance.x * k
                 val down = -distance.y * k
-                pan = Offset(pan.x + (right - down) * 0.7071f, pan.y + (-right - down) * 0.7071f)
+                // Never past the edge of the land or room, where there'd be nothing to tap to come back.
+                val (width, depth) = area
+                pan = Offset(
+                    (pan.x + (right - down) * 0.7071f).coerceIn(-target.x, width - target.x),
+                    (pan.y + (-right - down) * 0.7071f).coerceIn(-target.y, depth - target.y),
+                )
             },
             onSingleTapConfirmed = { event, _ ->
                 val ray = view.motionEventToRay(event)
@@ -580,15 +625,18 @@ private interface Body3D {
     var moving: Boolean
     var stance: Pose3D
 
-    /** How high the body lies when lying down: on a bed, or just above the ground. */
+    /** How high the furniture they're on is: the top of the bed when lying down, of the seat when sitting. */
     var lift: Float
 
     /** Where the person stands (or, in bed, where their feet are), and which way they face in degrees. */
     var anchor: Position
     var facing: Float
 
-    /** Lying in a bed: head towards the back wall, rather than wherever they last faced. */
-    var inBed: Boolean
+    /**
+     * On furniture, which all faces the front (+z): in bed, head towards the back wall; on a seat, facing
+     * out. Otherwise they face wherever they last turned.
+     */
+    var onFurniture: Boolean
 
     /** Called every frame with the time in seconds, to animate. */
     fun pose(seconds: Float)
@@ -600,8 +648,9 @@ private fun makeBody(engine: Engine, models: ModelLoader, materials: MaterialLoa
 
 /**
  * A clothed person (Quaternius Ultimate Modular, CC0): an outfit for their body, their skin tone, and
- * the animation for what they're doing: running between tiles, idling, busy hands, or lying down
- * (the models have no sleeping clip, so the whole figure lies back).
+ * the animation for what they're doing: running between tiles, idling, busy hands, sitting (clips made
+ * for the game, for a chair, a sofa or the ground), or lying down (there's no sleeping clip, so the
+ * whole figure lies back).
  */
 private class PersonModel(models: ModelLoader, look: Look) : Body3D {
     private val model = ModelNode(
@@ -615,7 +664,7 @@ private class PersonModel(models: ModelLoader, look: Look) : Body3D {
     override var lift = 0f
     override var anchor = Position()
     override var facing = 0f
-    override var inBed = false
+    override var onFurniture = false
     private var playing: String? = null
 
     init {
@@ -628,26 +677,35 @@ private class PersonModel(models: ModelLoader, look: Look) : Body3D {
 
     override fun pose(seconds: Float) {
         val lying = stance == Pose3D.LIE && !moving
+        // A seat: the sitting clip made for its height, raised or lowered the last few centimetres.
+        val seat = if (stance == Pose3D.SIT && onFurniture && !moving) (if (lift < LOW_SEAT) "Sit_Low" else "Sit") else null
         when {
             // The models have no sleeping clip: a calm, straight-legged stance laid flat reads as lying down.
             lying -> play("Idle_Neutral", speed = 0.4f)
             moving -> play("Run", speed = RUN_SPEED)
+            seat != null -> play(seat)
+            stance == Pose3D.SIT_GROUND -> play("Sit_Ground")
             stance == Pose3D.CHOP -> play("Sword_Slash")
             stance == Pose3D.WAVE -> play("Wave")
             stance == Pose3D.WORK -> play("Interact")
-            stance == Pose3D.SIT -> play("Idle_Neutral")
+            stance == Pose3D.SIT -> play("Idle_Neutral")  // nowhere to sit: stands calmly instead
             else -> play("Idle")
+        }
+        if (seat != null) {
+            model.rotation = Rotation(y = 0f)
+            model.position = Position(anchor.x, lift - SEAT_HEIGHTS.getValue(seat), anchor.z)
+            return
         }
         if (!lying) {
             model.rotation = Rotation(y = facing)
-            model.position = anchor
+            model.position = if (stance == Pose3D.SIT_GROUND && !moving) shuffledBack(anchor, facing) else anchor
             return
         }
         // Tipped back from the feet: head towards the back wall in bed. On the ground the body is moved
         // forward by half its height so it lies centred on its own spot instead of falling into whatever
         // is behind (a wall, a tent).
-        val yaw = if (inBed) 0f else facing
-        val shift = if (inBed) 0f else HEIGHT / 2
+        val yaw = if (onFurniture) 0f else facing
+        val shift = if (onFurniture) 0f else HEIGHT / 2
         val radians = Math.toRadians(yaw.toDouble())
         model.rotation = Rotation(x = -90f, y = yaw)
         model.position = Position(
@@ -671,6 +729,21 @@ private class PersonModel(models: ModelLoader, look: Look) : Body3D {
         /** The run clip's speed, so feet keep pace with the ground at a tile per walking step. */
         val RUN_SPEED = 240f / WALK_STEP_MILLIS
 
+        /** How high each sitting clip's seat is, in metres, with the feet on the floor (tools/art/build_models.py). */
+        val SEAT_HEIGHTS = mapOf("Sit" to 0.45f, "Sit_Low" to 0.32f)
+
+        /** Seats lower than this get the low, leaning-back clip: a sofa rather than a chair. */
+        const val LOW_SEAT = 0.4f
+
+        /**
+         * Sitting on the ground, legs stretch almost a metre forward: shuffle back so the feet stop short
+         * of whatever's in front (the fire), instead of reaching into the next tile.
+         */
+        fun shuffledBack(anchor: Position, facing: Float): Position {
+            val radians = Math.toRadians(facing.toDouble())
+            return Position(anchor.x - kotlin.math.sin(radians).toFloat() * 0.45f, 0f, anchor.z - kotlin.math.cos(radians).toFloat() * 0.45f)
+        }
+
         /** Skin tones in linear colour, by Look.skin: deep, light, brown, tan. */
         val SKIN_TONES = listOf(
             floatArrayOf(0.16f, 0.08f, 0.045f),
@@ -693,7 +766,7 @@ private class PersonRig(engine: Engine, materials: MaterialLoader, look: Look) :
     override var lift = 0f
     override var anchor = Position()
     override var facing = 0f
-    override var inBed = false
+    override var onFurniture = false
 
     private val hips = Node(engine).also { it.parent = root }
     private val legs = listOf(-1f, 1f).map { side -> joint(engine, hips, Position(side * 0.09f, 0.48f, 0f)) }
@@ -739,7 +812,7 @@ private class PersonRig(engine: Engine, materials: MaterialLoader, look: Look) :
      */
     override fun pose(seconds: Float) {
         root.position = anchor
-        root.rotation = Rotation(y = if (inBed && stance == Pose3D.LIE && !moving) 0f else facing)
+        root.rotation = Rotation(y = if (onFurniture && !moving) 0f else facing)
         hips.rotation = Rotation()
         if (stance == Pose3D.LIE && !moving) {
             // Pivot at the feet so the body lies back along the bed, head towards -z, face up.
@@ -752,10 +825,12 @@ private class PersonRig(engine: Engine, materials: MaterialLoader, look: Look) :
             return
         }
         chest.position = Position()
-        if (stance == Pose3D.SIT && !moving) {
+        if ((stance == Pose3D.SIT || stance == Pose3D.SIT_GROUND) && !moving) {
+            // Legs fold forward from the hips (0.48 m up), which drop to the seat, or nearly to the ground.
+            val seat = if (stance == Pose3D.SIT_GROUND) 0.08f else if (onFurniture) lift else 0.48f
             legs.forEach { it.rotation = Rotation(x = -85f) }
             arms.forEach { it.rotation = Rotation(x = -30f) }
-            hips.position = Position(0f, sin(seconds * 1.6f) * 0.006f, 0f)
+            hips.position = Position(0f, seat - 0.48f + sin(seconds * 1.6f) * 0.006f, 0f)
             return
         }
         if ((stance == Pose3D.WORK || stance == Pose3D.CHOP || stance == Pose3D.WAVE) && !moving) {
@@ -895,6 +970,27 @@ private fun campThing(engine: Engine, mat: (Color) -> MaterialInstance, kind: Ob
         else -> put(cube(w - 0.3f, 0.6f, d - 0.3f, Palette.wood), Position(cx, 0.3f, cz))
     }
     return parts
+}
+
+/**
+ * Where someone sits on a piece of furniture in 3D: over the seat, with y the height of the seat's top,
+ * measured from the models. Null if it isn't a seat. Like the models, seats face the front (+z). On a seat
+ * for two, [left] picks their half (the host on the left); null, playing alone, sits in the middle.
+ */
+fun seatOn(piece: Furniture, left: Boolean?): Position? = when (piece.kind) {
+    FurnitureKind.CHAIR -> Position(piece.x + 0.5f, 0.52f, piece.y + 0.5f)
+    FurnitureKind.SOFA -> Position(piece.x + half(left, 0.5f, 1f, 1.5f), 0.34f, piece.y + 0.8f)
+    else -> null
+}
+
+/** The same for the bench on the hill. */
+fun seatOn(obj: PlotObject, left: Boolean?): Position? =
+    if (obj.kind == ObjectKind.BENCH) Position(obj.x + half(left, 0.28f, 0.5f, 0.72f), 0.455f, obj.y + 0.53f) else null
+
+private fun half(left: Boolean?, leftHalf: Float, middle: Float, rightHalf: Float) = when (left) {
+    true -> leftHalf
+    false -> rightHalf
+    null -> middle
 }
 
 /** Furniture models (assets/models) for the pieces that have one; the rest are drawn as simple shapes. */
