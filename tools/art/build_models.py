@@ -220,6 +220,24 @@ def constant_track(doc, blob, index, tolerance=1e-4):
     return struct.pack(f'<{width}f', *first)
 
 
+def held_sampler(doc, blob, src_doc, sampler, held):
+    """
+    A track that never changes, shrunk to two identical keyframes at the clip's start and end.
+    (One keyframe would be smaller still, but Filament's animator reads past a lone keyframe,
+    which threw the characters' feet out of place.)
+    """
+    times = src_doc['accessors'][sampler['input']]
+    start, end = times.get('min', [0.0])[0], times.get('max', [0.0])[0]
+    if end <= start:
+        end = start + 0.001
+    kind = src_doc['accessors'][sampler['output']]['type']
+    return {
+        'input': add_accessor(doc, blob, struct.pack('<2f', start, end), 'SCALAR', [start], [end]),
+        'output': add_accessor(doc, blob, held + held, kind),
+        'interpolation': 'LINEAR',
+    }
+
+
 def add_accessor(doc, blob, data, kind, mins=None, maxs=None):
     acc = {'bufferView': add_view(doc, blob, data), 'componentType': 5126, 'count': len(data) // (4 * COMPONENTS[kind]), 'type': kind}
     if mins is not None:
@@ -295,12 +313,7 @@ def build_person(out_name, body, skin, hair):
                 s = anim['samplers'][ch['sampler']]
                 held = constant_track(lib_doc, lib_blob, s['output'])
                 if held is not None:
-                    # A track that never changes needs one keyframe, not hundreds.
-                    samplers.append({
-                        'input': add_accessor(doc, blob, struct.pack('<f', 0.0), 'SCALAR', [0.0], [0.0]),
-                        'output': add_accessor(doc, blob, held, lib_doc['accessors'][s['output']]['type']),
-                        'interpolation': 'STEP',
-                    })
+                    samplers.append(held_sampler(doc, blob, lib_doc, s, held))
                 else:
                     samplers.append({
                         'input': copy_accessor(lib_doc, lib_blob, doc, blob, s['input'], lib_cache),
@@ -352,11 +365,7 @@ def build_clothed(folder, name, out_name):
             smp = anim['samplers'][ch['sampler']]
             held = constant_track(src, src_blob, smp['output'])
             if held is not None:
-                samplers.append({
-                    'input': add_accessor(doc, blob, struct.pack('<f', 0.0), 'SCALAR', [0.0], [0.0]),
-                    'output': add_accessor(doc, blob, held, src['accessors'][smp['output']]['type']),
-                    'interpolation': 'STEP',
-                })
+                samplers.append(held_sampler(doc, blob, src, smp, held))
             else:
                 samplers.append({
                     'input': copy_accessor(src, src_blob, doc, blob, smp['input'], cache),

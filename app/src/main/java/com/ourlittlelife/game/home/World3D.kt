@@ -275,15 +275,12 @@ private fun TiltedScene(
                 val dx = at.x - last[0]
                 val dz = at.y - last[1]
                 val rest = figure.restAt
-                if (rest != null) {
-                    rig.root.rotation = Rotation()  // lying in bed: head towards the back wall
-                } else if (abs(dx) + abs(dz) > 1e-4f) {
-                    rig.root.rotation = Rotation(y = Math.toDegrees(atan2(dx, dz).toDouble()).toFloat())
-                }
+                if (abs(dx) + abs(dz) > 1e-4f) rig.facing = Math.toDegrees(atan2(dx, dz).toDouble()).toFloat()
                 rig.moving = at.x != figure.x.toFloat() || at.y != figure.y.toFloat()
                 rig.stance = figure.pose
                 rig.lift = rest?.y ?: 0f
-                rig.root.position = rest?.let { Position(it.x, 0f, it.z) } ?: Position(at.x + 0.5f, 0f, at.y + 0.5f)
+                rig.inBed = rest != null
+                rig.anchor = rest?.let { Position(it.x, 0f, it.z) } ?: Position(at.x + 0.5f, 0f, at.y + 0.5f)
                 last[0] = at.x
                 last[1] = at.y
             }
@@ -357,6 +354,13 @@ private interface Body3D {
     /** How high the body lies when lying down: on a bed, or just above the ground. */
     var lift: Float
 
+    /** Where the person stands (or, in bed, where their feet are), and which way they face in degrees. */
+    var anchor: Position
+    var facing: Float
+
+    /** Lying in a bed: head towards the back wall, rather than wherever they last faced. */
+    var inBed: Boolean
+
     /** Called every frame with the time in seconds, to animate. */
     fun pose(seconds: Float)
 }
@@ -374,14 +378,16 @@ private class PersonModel(models: ModelLoader, look: Look) : Body3D {
     private val model = ModelNode(
         modelInstance = models.createModelInstance("models/person_${look.body.coerceIn(0, 1)}_${look.outfit.coerceIn(0, Look.OUTFITS - 1)}.glb"),
         autoAnimate = false,
-        scaleToUnits = 1.75f,
+        scaleToUnits = HEIGHT,
     )
     override val root: Node = model
     override var moving = false
     override var stance = Pose3D.AUTO
     override var lift = 0f
+    override var anchor = Position()
+    override var facing = 0f
+    override var inBed = false
     private var playing: String? = null
-    private var facing = 0f
 
     init {
         val tone = SKIN_TONES[look.skin.coerceIn(0, SKIN_TONES.size - 1)]
@@ -394,21 +400,30 @@ private class PersonModel(models: ModelLoader, look: Look) : Body3D {
     override fun pose(seconds: Float) {
         val lying = stance == Pose3D.LIE && !moving
         when {
-            lying -> play(null)
+            // The models have no sleeping clip: a calm, straight-legged stance laid flat reads as lying down.
+            lying -> play("Idle_Neutral", speed = 0.4f)
             moving -> play("Run", speed = 1.3f)
             stance == Pose3D.WORK -> play("Interact")
             stance == Pose3D.SIT -> play("Idle_Neutral")
             else -> play("Idle")
         }
-        val at = model.position
-        if (lying) {
-            model.rotation = Rotation(x = -90f, y = facing)
-            model.position = Position(at.x, maxOf(lift, 0.1f), at.z)
-        } else {
-            facing = model.rotation.y
-            if (model.rotation.x != 0f) model.rotation = Rotation(y = facing)
-            if (at.y != 0f) model.position = Position(at.x, 0f, at.z)
+        if (!lying) {
+            model.rotation = Rotation(y = facing)
+            model.position = anchor
+            return
         }
+        // Tipped back from the feet: head towards the back wall in bed. On the ground the body is moved
+        // forward by half its height so it lies centred on its own spot instead of falling into whatever
+        // is behind (a wall, a tent).
+        val yaw = if (inBed) 0f else facing
+        val shift = if (inBed) 0f else HEIGHT / 2
+        val radians = Math.toRadians(yaw.toDouble())
+        model.rotation = Rotation(x = -90f, y = yaw)
+        model.position = Position(
+            anchor.x + kotlin.math.sin(radians).toFloat() * shift,
+            maxOf(lift, 0.1f),
+            anchor.z + kotlin.math.cos(radians).toFloat() * shift,
+        )
     }
 
     private fun play(clip: String?, speed: Float = 1f) {
@@ -419,6 +434,9 @@ private class PersonModel(models: ModelLoader, look: Look) : Body3D {
     }
 
     companion object {
+        /** How tall people stand, in metres (one tile is a metre). */
+        const val HEIGHT = 1.75f
+
         /** Skin tones in linear colour, by Look.skin: deep, light, brown, tan. */
         val SKIN_TONES = listOf(
             floatArrayOf(0.16f, 0.08f, 0.045f),
@@ -439,6 +457,9 @@ private class PersonRig(engine: Engine, materials: MaterialLoader, look: Look) :
     override var moving = false
     override var stance = Pose3D.AUTO
     override var lift = 0f
+    override var anchor = Position()
+    override var facing = 0f
+    override var inBed = false
 
     private val hips = Node(engine).also { it.parent = root }
     private val legs = listOf(-1f, 1f).map { side -> joint(engine, hips, Position(side * 0.09f, 0.48f, 0f)) }
@@ -483,6 +504,8 @@ private class PersonRig(engine: Engine, materials: MaterialLoader, look: Look) :
      * tips the whole body back; busy hands work up and down; standing still breathes gently.
      */
     override fun pose(seconds: Float) {
+        root.position = anchor
+        root.rotation = Rotation(y = if (inBed && stance == Pose3D.LIE && !moving) 0f else facing)
         hips.rotation = Rotation()
         if (stance == Pose3D.LIE && !moving) {
             // Pivot at the feet so the body lies back along the bed, head towards -z, face up.
