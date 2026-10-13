@@ -9,6 +9,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.ourlittlelife.game.data.Auth
+import com.ourlittlelife.game.update.UpdatePrompt
 import com.ourlittlelife.game.data.SharedWorldSource
 import com.ourlittlelife.game.data.SoloWorldSource
 import com.ourlittlelife.game.data.WorldStore
@@ -28,6 +29,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             OurLittleLifeTheme {
                 AppRoot()
+                UpdatePrompt()
             }
         }
     }

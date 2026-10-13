@@ -36,6 +36,7 @@ Kotlin, Jetpack Compose, Material 3. Firebase (Auth, Firestore, Storage, Cloud F
 - Run rules tests: `./gradlew :core:rules:test`
 - Build debug APK: `./gradlew :app:assembleDebug`
 - Install on a connected phone: `adb install -r -t app/build/outputs/apk/debug/app-debug.apk`
+- Publish a release to friends' phones: bump `versionCode` and `versionName` in `app/build.gradle.kts`, commit, then `tools/release.sh "What's new"`. It builds the signed release and force-pushes the APK and `latest.json` to the `releases` branch; the game offers the update when it next opens. Release signing needs `keystore.properties` and the key it points to (both git-ignored, backed up outside the repo). Debug builds are signed with a different key, so they never offer updates.
 
 Running Gradle from Claude Code's shell on this machine fails with "Unable to establish loopback connection" unless Java gets a short temp folder. Use:
 
