@@ -1201,6 +1201,14 @@ private fun NeedsSheet(viewModel: GameViewModel, onDismiss: () -> Unit, onBackTo
                 onClick = { viewModel.chooseView3d(!viewModel.view3d) },
                 modifier = Modifier.fillMaxWidth(),
             )
+            if (!viewModel.isSolo) {
+                SecondaryButton(
+                    text = if (viewModel.campNews) "Turn off camp news" else "Turn on camp news",
+                    detail = if (viewModel.campNews) "Notifications when the game is closed" else "Hear when they go to bed or wave",
+                    onClick = { viewModel.chooseCampNews(!viewModel.campNews) },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
             Text(
                 if (viewModel.isSolo) {
                     "Your solo game, saved on this phone. To play with someone, start or join a shared world from the lobby."

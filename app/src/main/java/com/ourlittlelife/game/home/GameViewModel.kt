@@ -9,6 +9,7 @@ import androidx.lifecycle.viewModelScope
 import com.ourlittlelife.game.data.NeedsUpdate
 import com.ourlittlelife.game.data.WorldSource
 import com.ourlittlelife.game.day.describeShortfall
+import com.ourlittlelife.game.notify.CampNews
 import com.ourlittlelife.rules.Action
 import com.ourlittlelife.rules.Activity
 import com.ourlittlelife.rules.ActionResult
@@ -189,6 +190,15 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     var view3d by mutableStateOf(viewPrefs.getBoolean("3d", strongPhone(application)))
         private set
 
+    /** Whether this phone shows camp news while the game is closed. */
+    var campNews by mutableStateOf(CampNews.enabled(application))
+        private set
+
+    fun chooseCampNews(on: Boolean) {
+        campNews = on
+        CampNews.setEnabled(getApplication(), on)
+    }
+
     fun chooseView3d(on: Boolean) {
         view3d = on
         viewPrefs.edit().putBoolean("3d", on).apply()
@@ -254,9 +264,12 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     private fun onWorld(next: World) {
         val before = world?.takeIf { ready }?.player(myId)
         val previousDay = before?.character?.clock?.day
+        val savedBefore = confirmed?.players?.get(myId)
         world = next
         confirmed = next
         if (!ready) return
+        // Whatever you see while playing isn't news later.
+        if (!isSolo) CampNews.seen(getApplication(), next, myId)
 
         // Someone greeted you since the last update.
         val now = me
@@ -275,9 +288,12 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             tour(withPartner = true, iLead = false, from = before.tile)
         }
 
+        // Where you stand is this phone's to say: the save can lag behind your last steps, and every update
+        // (your partner moving, an hourly save) used to snap you back there, the camera panning after you.
+        // Only a move that happened in the save itself (a walk together, say) is taken.
         if (walkJob?.isActive != true) {
-            characterTile = me.tile
-            me.inside?.let { insideTile = it.tile }
+            if (savedBefore == null || me.tile != savedBefore.tile) characterTile = me.tile
+            me.inside?.let { if (it.tile != savedBefore?.inside?.tile) insideTile = it.tile }
         }
 
         // An activity left over from closing the app mid-moment is cleared once, so the partner isn't misled.

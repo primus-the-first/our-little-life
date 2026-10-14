@@ -23,8 +23,8 @@ android {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a")
         }
         // tools/release.sh publishes this version to friends' phones; bump both before each release.
-        versionCode = 29
-        versionName = "0.22.1"
+        versionCode = 30
+        versionName = "0.23.0"
     }
 
     // Release builds are signed with the key in keystore.properties (never committed; see CLAUDE.md).
@@ -82,6 +82,8 @@ dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
+    // Camp news: a check every 15 minutes while the game is closed.
+    implementation(libs.androidx.work.runtime)
     // The 3D view: SceneView on Filament (Apache 2.0).
     implementation(libs.sceneview)
 

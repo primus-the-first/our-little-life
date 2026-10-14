@@ -3,6 +3,8 @@
 
     <!-- The game updates itself from the repo's releases branch (update/Updater.kt). -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- Camp news while the game is closed (notify/CampNews.kt). -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
         android:allowBackup="false"

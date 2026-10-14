@@ -57,6 +57,11 @@ class WorldStore(private val db: FirebaseFirestore = FirebaseFirestore.getInstan
                 )
             }
 
+    /** Every world this person belongs to that this version of the game can read, in full. */
+    suspend fun openWorlds(uid: String): List<World> =
+        worlds.whereArrayContains("members", uid).get().await().documents
+            .mapNotNull { doc -> runCatching { read(doc) }.getOrNull() }
+
     /** Creates a world with this person as host. A solo save, if there is one, comes along as the starting point. */
     suspend fun create(uid: String, name: String, mode: Mode, solo: SaveGame?): String {
         var code = Worlds.newCode()

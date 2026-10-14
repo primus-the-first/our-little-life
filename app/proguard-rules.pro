@@ -19,3 +19,6 @@
 
 # The in-game updater reads latest.json into this class.
 -keep class com.ourlittlelife.game.update.** { *; }
+
+# Camp news worker, made by WorkManager by name.
+-keep class com.ourlittlelife.game.notify.** { *; }
