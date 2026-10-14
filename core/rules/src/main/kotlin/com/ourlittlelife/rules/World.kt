@@ -46,8 +46,25 @@ data class Player(
     val bestLapMillis: Long? = null,
     val fishLog: Map<FishKind, Int> = emptyMap(),
     val look: Look? = null,
+    val doing: Doing? = null,
 ) {
     val tile: Pair<Int, Int> get() = tileX to tileY
+}
+
+/**
+ * What a player is in the middle of (reading, sitting, chopping), so their partner's phone can show it:
+ * the action's id, the id of the thing or piece of furniture it's on, when it started (epoch millis),
+ * and how many game minutes it takes, which play out at a minute a second.
+ */
+@Serializable
+data class Doing(val action: String, val target: String? = null, val since: Long, val minutes: Int) {
+
+    /** Still going at [now], allowing a little for phones whose clocks disagree. */
+    fun activeAt(now: Long): Boolean = now < since + minutes * 1000L + GRACE_MILLIS
+
+    companion object {
+        const val GRACE_MILLIS = 5_000L
+    }
 }
 
 /**

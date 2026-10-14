@@ -23,6 +23,7 @@ import com.ourlittlelife.rules.FishKind
 import com.ourlittlelife.rules.GardenResult
 import com.ourlittlelife.rules.Gardening
 import com.ourlittlelife.rules.Fishing
+import com.ourlittlelife.rules.Doing
 import com.ourlittlelife.rules.Furniture
 import com.ourlittlelife.rules.Gesture
 import com.ourlittlelife.rules.FurnitureActions
@@ -67,6 +68,8 @@ data class Busy(
     /** In 3D: the seat you're on (y is its height), and the middle of what you're using, to face it. */
     val seat: io.github.sceneview.math.Position? = null,
     val faceTo: Pair<Float, Float>? = null,
+    /** What your partner's phone is told you're doing, in a shared world. */
+    val shared: Doing? = null,
     val onDone: () -> Unit,
 )
 
@@ -529,7 +532,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         val spot = Interiors.spotBeside(room, piece, insideTile, setOfNotNull(partnerInHere?.inside?.tile)) ?: insideTile
         val company = piece.kind in FurnitureActions.shared && partnerInHere?.character?.asleep == false
         walkInside(room, spot) {
-            playOut(action, seat = seatFor(room, piece, action, spot), faceTo = piece.x + piece.kind.width / 2f to piece.y + piece.kind.height / 2f) {
+            playOut(action, target = piece.id, seat = seatFor(room, piece, action.id, spot, seatSide(myId)), faceTo = piece.x + piece.kind.width / 2f to piece.y + piece.kind.height / 2f) {
                 commit(onSaved = { applied ->
                     if (applied && company) message = "Nicer with ${partnerName ?: "company"}. +${Interiors.COMPANY_SOCIAL} social."
                 }) { w -> Interiors.use(Interiors.moveTo(w, myId, spot), myId, piece.id, action) }
@@ -649,8 +652,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                     return
                 }
                 walkTo(spot, saveOnArrival = true) {
-                    val seat = if (action == Outdoors.sit || action == Together.picnic) seatOn(obj, left = seatSide) else null
-                    playOut(action, seat = seat, faceTo = obj.x + obj.kind.width / 2f to obj.y + obj.kind.height / 2f) {
+                    playOut(action, target = obj.id, seat = seatFor(obj, action.id, seatSide(myId)), faceTo = obj.x + obj.kind.width / 2f to obj.y + obj.kind.height / 2f) {
                         val here = world!!.let { w -> w.withPlayer(w.player(myId).copy(tileX = spot.first, tileY = spot.second)) }
                         val bonus = Together.companyBonus[action]?.takeIf { Together.hasCompany(here, here.player(myId)) }
                         commit(onSaved = { applied -> reportUse(applied, obj, action, bonus) }) { w ->
@@ -907,6 +909,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
      * what you're doing (faster when hurrying); otherwise it's idle time, saved every so often.
      */
     fun tick() {
+        if (ready) refreshPartnerDoing()
         if (!ready || character.asleep || stargazing || racing || fishing || touring) return
         val doing = busy
         if (doing != null) {
@@ -937,37 +940,55 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     /**
      * Plays [action] out minute by minute, then runs [onDone]. Long things (work, building) happen in one go.
      * In 3D you sit on [seat] if there is one, and turn to face [faceTo], the middle of what you're using.
+     * In a shared world it's saved as what you're doing, on [target], so your partner sees it too.
      */
-    private fun playOut(action: Action, seat: io.github.sceneview.math.Position? = null, faceTo: Pair<Float, Float>? = null, onDone: () -> Unit) {
-        if (action.minutes > PLAY_OUT_MAX_MINUTES) onDone()
-        else busy = Busy(action.name, action.minutes, pose = poseFor(action, seated = seat != null), seat = seat, faceTo = faceTo, onDone = onDone)
+    private fun playOut(
+        action: Action,
+        target: String? = null,
+        seat: io.github.sceneview.math.Position? = null,
+        faceTo: Pair<Float, Float>? = null,
+        onDone: () -> Unit,
+    ) {
+        if (action.minutes > PLAY_OUT_MAX_MINUTES) return onDone()
+        val shared = if (isSolo) null else Doing(action.id, target, System.currentTimeMillis(), action.minutes)
+        busy = Busy(action.name, action.minutes, pose = poseFor(action.id, seated = seat != null), seat = seat, faceTo = faceTo, shared = shared, onDone = onDone)
+        shared?.let(::shareDoing)
+    }
+
+    /** Saves what you're doing (or null: nothing) for your partner's phone. */
+    private fun shareDoing(doing: Doing?) {
+        save { w -> w.player(myId).takeIf { it.doing != doing }?.let { w.withPlayer(it.copy(doing = doing)) } }
     }
 
     /**
-     * How the body looks while doing [action] in 3D: lying for naps, a swing for chopping, sitting when
+     * How the body looks while doing an action in 3D: lying for naps, a swing for chopping, sitting when
      * there's a seat, on the ground for stories by the fire or a book with no chair by it, busy hands otherwise.
      */
-    private fun poseFor(action: Action, seated: Boolean): Pose3D = when {
-        action.id == "nap_tent" || action.id == "nap_bed" -> Pose3D.LIE
-        action.id == "chop_wood" || action.id == "break_rock" -> Pose3D.CHOP
+    private fun poseFor(actionId: String, seated: Boolean): Pose3D = when {
+        actionId == "nap_tent" || actionId == "nap_bed" -> Pose3D.LIE
+        actionId == "chop_wood" || actionId == "break_rock" -> Pose3D.CHOP
         seated -> Pose3D.SIT
-        action == Together.stories || action == FurnitureActions.read || action == Together.picnic -> Pose3D.SIT_GROUND
+        actionId == Together.stories.id || actionId == FurnitureActions.read.id || actionId == Together.picnic.id -> Pose3D.SIT_GROUND
         else -> Pose3D.WORK
     }
 
     /**
-     * Where you sit in 3D for [action] on [piece]: the chair, your half of the sofa, or for a meal or a book,
-     * the seat nearest you right by the table or bookshelf. Null when there's nowhere to sit.
+     * Where someone sits in 3D for an action on [piece]: the chair, their half of the sofa, or for a meal or
+     * a book, the seat nearest them right by the table or bookshelf. Null when there's nowhere to sit.
      */
-    private fun seatFor(room: Room, piece: Furniture, action: Action, standing: Pair<Int, Int>): io.github.sceneview.math.Position? =
-        when (action) {
-            FurnitureActions.sit, FurnitureActions.sitTogether -> seatOn(piece, left = seatSide)
-            FurnitureActions.meal, FurnitureActions.read -> room.furniture
-                .filter { seatOn(it, left = seatSide) != null && floorBetween(it, piece) <= 1 }
+    private fun seatFor(room: Room, piece: Furniture, actionId: String, standing: Pair<Int, Int>, left: Boolean?): io.github.sceneview.math.Position? =
+        when (actionId) {
+            FurnitureActions.sit.id, FurnitureActions.sitTogether.id -> seatOn(piece, left)
+            FurnitureActions.meal.id, FurnitureActions.read.id -> room.furniture
+                .filter { seatOn(it, left) != null && floorBetween(it, piece) <= 1 }
                 .minByOrNull { kotlin.math.abs(it.x - standing.first) + kotlin.math.abs(it.y - standing.second) }
-                ?.let { seatOn(it, left = seatSide) }
+                ?.let { seatOn(it, left) }
             else -> null
         }
+
+    /** The seat on the hill's bench, for sitting a while or a picnic. */
+    private fun seatFor(obj: PlotObject, actionId: String, left: Boolean?): io.github.sceneview.math.Position? =
+        if (actionId == Outdoors.sit.id || actionId == Together.picnic.id) seatOn(obj, left) else null
 
     /** Tiles of floor between two pieces (0 when they touch). */
     private fun floorBetween(a: Furniture, b: Furniture): Int = maxOf(
@@ -975,8 +996,8 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         maxOf(a.y - (b.y + b.kind.height), b.y - (a.y + a.kind.height), 0),
     )
 
-    /** Your half of a seat for two: the host takes the left, whoever joined the right; alone, the middle. */
-    private val seatSide: Boolean? get() = world?.players?.keys?.takeIf { it.size > 1 }?.let { it.first() == myId }
+    /** Someone's half of a seat for two: the host takes the left, whoever joined the right; alone, the middle. */
+    private fun seatSide(playerId: String): Boolean? = world?.players?.keys?.takeIf { it.size > 1 }?.let { it.first() == playerId }
 
     /** Your pose in 3D: asleep is lying down; otherwise whatever you're busy with, or walking and standing. */
     val myPose: Pose3D get() = when {
@@ -995,10 +1016,34 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     /** The middle of what you're using, to face it in 3D. */
     val myFaceTo: Pair<Float, Float>? get() = busy?.faceTo
 
-    fun poseOf(player: Player): Pose3D = when {
-        player.character.asleep -> Pose3D.LIE
-        partnerWaving && player.id == partner?.id -> Pose3D.WAVE
-        else -> Pose3D.AUTO
+    /** What your partner is in the middle of, while it lasts. Refreshed every second (see [tick]). */
+    var partnerDoing by mutableStateOf<Doing?>(null)
+        private set
+
+    private fun refreshPartnerDoing() {
+        val now = partner?.doing?.takeIf { it.activeAt(System.currentTimeMillis()) }
+        if (now != partnerDoing) partnerDoing = now
+    }
+
+    /** How your partner shows in 3D, from what they're doing: the same poses as yours. */
+    data class Shown(val pose: Pose3D, val rest: io.github.sceneview.math.Position? = null, val faceTo: Pair<Float, Float>? = null)
+
+    fun shownAs(player: Player, room: Room?): Shown {
+        if (player.character.asleep) return Shown(Pose3D.LIE, room?.let { bedSpot(it, player.id) })
+        if (partnerWaving && player.id == partner?.id) return Shown(Pose3D.WAVE)
+        val doing = partnerDoing?.takeIf { player.id == partner?.id } ?: return Shown(Pose3D.AUTO)
+        val left = seatSide(player.id)
+        val piece = room?.furniture?.firstOrNull { it.id == doing.target }
+        val obj = if (room == null) plot.objects.firstOrNull { it.id == doing.target } else null
+        val seat = when {
+            piece != null -> seatFor(room, piece, doing.action, player.inside?.tile ?: player.tile, left)
+            obj != null -> seatFor(obj, doing.action, left)
+            else -> null
+        }
+        val faceTo = piece?.let { it.x + it.kind.width / 2f to it.y + it.kind.height / 2f }
+            ?: obj?.let { it.x + it.kind.width / 2f to it.y + it.kind.height / 2f }
+        val pose = poseFor(doing.action, seated = seat != null)
+        return Shown(pose, rest = if (pose == Pose3D.SIT) seat else null, faceTo = faceTo)
     }
 
     /** True for a moment after you greet your partner: your figure waves. */
@@ -1029,7 +1074,13 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
 
     /** Speeds up what you're doing. */
     fun hurry() {
-        busy = busy?.copy(hurry = true)
+        val doing = busy ?: return
+        busy = doing.copy(hurry = true)
+        // Your partner sees it end when it really will.
+        doing.shared?.let { shared ->
+            val left = ((doing.minutes - doing.elapsed) / HURRY_SPEED).toInt() + 1
+            shareDoing(shared.copy(since = System.currentTimeMillis(), minutes = left))
+        }
     }
 
     /** Stops what you're doing. The time spent so far still passes; the action doesn't happen. */
@@ -1038,6 +1089,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         busy = null
         pendingMinutes += doing.elapsed.toInt()
         message = "Stopped."
+        if (!isSolo) shareDoing(null)
     }
 
     fun clearMessage() {

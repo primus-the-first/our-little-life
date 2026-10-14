@@ -286,12 +286,8 @@ private fun MapArea(viewModel: GameViewModel, focus: Pair<Int, Int>, modifier: M
                     ),
                     viewModel.partnerInHere?.let { other ->
                         other.inside?.let {
-                            val pose = viewModel.poseOf(other)
-                            Figure3D(
-                                other.character.name, it.x, it.y, viewModel.lookFor(other.id),
-                                pose = pose,
-                                restAt = if (pose == Pose3D.LIE) viewModel.bedSpot(room, other.id) else null,
-                            )
+                            val shown = viewModel.shownAs(other, room)
+                            Figure3D(other.character.name, it.x, it.y, viewModel.lookFor(other.id), pose = shown.pose, restAt = shown.rest, faceTo = shown.faceTo)
                         }
                     },
                 ),
@@ -329,7 +325,10 @@ private fun MapArea(viewModel: GameViewModel, focus: Pair<Int, Int>, modifier: M
                         faceTo = viewModel.myFaceTo,
                     ),
                     viewModel.partner?.takeIf { it.inside == null }?.let { other ->
-                        viewModel.partnerTile?.let { (x, y) -> Figure3D(other.character.name, x, y, viewModel.lookFor(other.id), pose = viewModel.poseOf(other)) }
+                        viewModel.partnerTile?.let { (x, y) ->
+                            val shown = viewModel.shownAs(other, null)
+                            Figure3D(other.character.name, x, y, viewModel.lookFor(other.id), pose = shown.pose, restAt = shown.rest, faceTo = shown.faceTo)
+                        }
                     },
                 ),
                 focus = viewModel.characterTile,
