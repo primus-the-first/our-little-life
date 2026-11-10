@@ -63,17 +63,20 @@ object Building {
      * nothing may be in the way, and every later room shares a wall with one already built.
      */
     fun check(plot: Plot, kind: RoomKind, x: Int, y: Int): Placement {
-        if (!plot.yard.contains(Area(x, y, kind.width, kind.height))) return Placement.OffPlot
-        if (plot.rooms.any { it.kind == kind }) return Placement.AlreadyBuilt
-        if (kind != RoomKind.CABIN && plot.rooms.none { it.kind == RoomKind.CABIN }) return Placement.CabinFirst
+        // Next-door neighbours each grow their own home on their own lot; otherwise it's the whole yard.
+        val land = plot.buildable
+        val home = plot.rooms.filter { land.contains(it.x, it.y) }
+        if (!land.contains(Area(x, y, kind.width, kind.height))) return Placement.OffPlot
+        if (home.any { it.kind == kind }) return Placement.AlreadyBuilt
+        if (kind != RoomKind.CABIN && home.none { it.kind == RoomKind.CABIN }) return Placement.CabinFirst
 
         val footprint = Room("new", kind, x, y).tiles()
         val blocked = footprint.any { (tx, ty) -> plot.objectAt(tx, ty) != null || plot.roomAt(tx, ty) != null }
         if (blocked) return Placement.Blocked
 
-        if (plot.rooms.isNotEmpty()) {
+        if (home.isNotEmpty()) {
             val touches = footprint.any { (tx, ty) ->
-                listOf(tx - 1 to ty, tx + 1 to ty, tx to ty - 1, tx to ty + 1).any { (nx, ny) -> plot.roomAt(nx, ny) != null }
+                listOf(tx - 1 to ty, tx + 1 to ty, tx to ty - 1, tx to ty + 1).any { (nx, ny) -> home.any { it.covers(nx, ny) } }
             }
             if (!touches) return Placement.NotConnected
         }

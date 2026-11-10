@@ -1137,7 +1137,16 @@ private fun buildWorld(engine: Engine, models: ModelLoader, materials: MaterialL
         box(course.x.toFloat(), course.y.toFloat(), 0.1f, course.height.toFloat(), 0.5f, Palette.fence)
         box((course.x + course.width).toFloat() - 0.1f, course.y.toFloat(), 0.1f, course.height.toFloat(), 0.5f, Palette.fence)
     }
-    box(plot.yard.x + 8f, plot.yard.y + 8f, 8f, 6f, 0.025f, Palette.dirt)
+    if (plot.lot == null) {
+        box(plot.yard.x + 8f, plot.yard.y + 8f, 8f, 6f, 0.025f, Palette.dirt)
+    } else {
+        // Next-door neighbours: a camp on each lot, and a pale line along the boundary. It's flat, so
+        // you can step across anywhere to visit.
+        val middle = plot.yard.x + plot.yard.width / 2f
+        box(plot.yard.x + 2f, plot.yard.y + 8f, 8f, 6f, 0.025f, Palette.dirt)
+        box(middle + 2f, plot.yard.y + 8f, 8f, 6f, 0.025f, Palette.dirt)
+        box(middle - 0.1f, plot.yard.y.toFloat(), 0.2f, plot.yard.height.toFloat(), 0.03f, Palette.path)
+    }
 
     // Rooms: a floor and walls with a doorway; gardens get a low fence and whatever is growing.
     plot.rooms.forEach { room ->

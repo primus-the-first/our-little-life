@@ -681,7 +681,7 @@ private fun ObjectSheet(obj: PlotObject, viewModel: GameViewModel, asleep: Boole
             }
             when {
                 asleep -> Text("Everyone's asleep. Start the next day first.", style = OllType.body, color = colors.inkMuted)
-                obj.kind == ObjectKind.CHEST -> ChestContents(viewModel.camp.storage)
+                obj.kind == ObjectKind.CHEST -> ChestContents(viewModel.chestAt(obj))
                 actions.isEmpty() -> Text(comingSoon(obj.kind), style = OllType.body, color = colors.inkMuted)
                 else -> actions.forEach { action ->
                     val grown = usesLeft > 0
@@ -1200,6 +1200,14 @@ private fun NeedsSheet(viewModel: GameViewModel, onDismiss: () -> Unit, onBackTo
                 onClick = { viewModel.chooseView3d(!viewModel.view3d) },
                 modifier = Modifier.fillMaxWidth(),
             )
+            if (viewModel.isNeighbours) {
+                SecondaryButton(
+                    text = if (viewModel.helpYourself) "Turn off Help yourself" else "Turn on Help yourself",
+                    detail = if (viewModel.helpYourself) "Your neighbour can gather on your lot" else "Let your neighbour gather on your lot",
+                    onClick = { viewModel.chooseHelpYourself(!viewModel.helpYourself) },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
             if (!viewModel.isSolo) {
                 SecondaryButton(
                     text = if (viewModel.campNews) "Turn off camp news" else "Turn on camp news",

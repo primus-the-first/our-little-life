@@ -164,7 +164,7 @@ fun PlotCanvas(
 
         // In build mode, a dashed edge shows where your yard ends.
         if (showYard && plot.surroundings) {
-            val yard = plot.yard
+            val yard = plot.buildable
             drawRect(
                 color = colors.ink.copy(alpha = 0.6f),
                 topLeft = Offset(origin.x + yard.x * tile, origin.y + yard.y * tile),

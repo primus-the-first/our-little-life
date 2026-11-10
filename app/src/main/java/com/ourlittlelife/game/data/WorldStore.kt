@@ -63,12 +63,12 @@ class WorldStore(private val db: FirebaseFirestore = FirebaseFirestore.getInstan
             .mapNotNull { doc -> runCatching { read(doc) }.getOrNull() }
 
     /** Creates a world with this person as host. A solo save, if there is one, comes along as the starting point. */
-    suspend fun create(uid: String, name: String, mode: Mode, solo: SaveGame?): String {
+    suspend fun create(uid: String, name: String, mode: Mode, solo: SaveGame?, neighbours: Boolean = false): String {
         var code = Worlds.newCode()
         while (codes.document(code).get().await().exists()) code = Worlds.newCode()
 
         val ref = worlds.document()
-        var world = Worlds.create(ref.id, code, mode, uid, name)
+        var world = Worlds.create(ref.id, code, mode, uid, name, neighbours)
         if (solo != null) {
             val host = world.player(uid)
             world = WorldMap.upgrade(

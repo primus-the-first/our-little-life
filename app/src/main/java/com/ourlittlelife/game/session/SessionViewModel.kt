@@ -122,12 +122,13 @@ class SessionViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch { state = lobbyFor(user) }
     }
 
-    fun create(mode: Mode) {
+    /** [neighbours]: two lots side by side, one each, instead of one shared home. */
+    fun create(mode: Mode, neighbours: Boolean) {
         val lobby = state as? Session.Lobby ?: return
         state = lobby.copy(busy = true, error = null)
         viewModelScope.launch {
             state = try {
-                enter(store.create(lobby.uid, lobby.name, mode, solo = null), lobby.uid)
+                enter(store.create(lobby.uid, lobby.name, mode, solo = null, neighbours = neighbours), lobby.uid)
             } catch (e: Exception) {
                 lobby.copy(busy = false, error = "Couldn't create the world. Check your connection and try again.")
             }

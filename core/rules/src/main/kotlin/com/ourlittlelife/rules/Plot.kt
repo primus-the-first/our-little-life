@@ -40,7 +40,13 @@ data class Plot(
     val rooms: List<Room> = emptyList(),
     val yard: Area = Area(0, 0, size, size),
     val surroundings: Boolean = false,
+    /** In a neighbours world, the lot of whoever is acting: they build there only. Never saved (see [Neighbours]). */
+    val lot: Area? = null,
 ) {
+
+    /** Where rooms may go right now: the acting neighbour's lot, or the whole yard. */
+    val buildable: Area get() = lot ?: yard
+
 
     fun terrainAt(tileX: Int, tileY: Int): Terrain = if (surroundings) WorldMap.terrainAt(tileX, tileY) else Terrain.GRASS
 
@@ -78,6 +84,30 @@ object StarterPlot {
         place(ObjectKind.BUSH, 7 to 6, 15 to 7, 19 to 15, 3 to 12, 13 to 17)
 
         return Plot(SIZE, objects)
+    }
+
+    /**
+     * The same land for next-door neighbours: two lots, each with its own camp near the top, trees,
+     * rocks and bushes around it, and clear ground below to build on. The second lot's ids end in "-2".
+     * The path to town stays by the fence between them, for both.
+     */
+    fun createForNeighbours(): Plot {
+        val half = SIZE / 2
+        val lots = listOf("" to 0, "-2" to half).flatMap { (suffix, dx) ->
+            fun spots(kind: ObjectKind, vararg at: Pair<Int, Int>) =
+                at.mapIndexed { i, (x, y) -> PlotObject("${kind.name.lowercase()}-${i + 1}$suffix", kind, x + dx, y) }
+            listOf(
+                PlotObject("tent$suffix", ObjectKind.TENT, 4 + dx, 9),
+                PlotObject("campfire$suffix", ObjectKind.CAMPFIRE, 7 + dx, 11),
+                PlotObject("washbasin$suffix", ObjectKind.WASHBASIN, 8 + dx, 9),
+                PlotObject("workbench$suffix", ObjectKind.WORKBENCH, 5 + dx, 12),
+                PlotObject("chest$suffix", ObjectKind.CHEST, 4 + dx, 12),
+            ) +
+                spots(ObjectKind.TREE, 3 to 3, 6 to 2, 1 to 8, 0 to 16, 0 to 21, 10 to 1) +
+                spots(ObjectKind.ROCK, 10 to 5, 9 to 3, 1 to 5) +
+                spots(ObjectKind.BUSH, 7 to 6, 1 to 12, 10 to 8)
+        }
+        return Plot(SIZE, lots + PlotObject("signpost", ObjectKind.SIGNPOST, 11, 22))
     }
 }
 

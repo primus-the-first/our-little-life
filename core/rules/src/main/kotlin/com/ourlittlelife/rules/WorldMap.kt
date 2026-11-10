@@ -40,6 +40,10 @@ object WorldMap {
     /** Your own land, where rooms go. It's the old 24×24 plot, set in the middle-west. */
     val YARD = Area(20, 20, StarterPlot.SIZE, StarterPlot.SIZE)
 
+    /** For next-door neighbours, the yard is two lots: the host's on the west, whoever joins on the east. */
+    val WEST_LOT = Area(YARD.x, YARD.y, YARD.width / 2, YARD.height)
+    val EAST_LOT = Area(YARD.x + YARD.width / 2, YARD.y, YARD.width / 2, YARD.height)
+
     val HILL = Area(27, 4, 10, 7)
     val POND = Area(4, 23, 9, 6)
 

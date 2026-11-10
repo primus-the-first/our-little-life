@@ -45,6 +45,7 @@ object Gardening {
     fun plant(world: World, playerId: String, roomId: String, index: Int, crop: Crop): GardenResult {
         val garden = world.camp.plot.rooms.firstOrNull { it.id == roomId } ?: return GardenResult.Refused
         val bed = garden.beds.getOrNull(index) ?: return GardenResult.Refused
+        if (!Neighbours.mayTake(world, playerId, garden)) return GardenResult.Refused
         if (bed.crop != null) return GardenResult.BedTaken
         val seeds = mapOf(Resource.COINS to crop.seedCoins)
         val short = world.camp.storage.shortfall(seeds)
@@ -66,6 +67,7 @@ object Gardening {
     fun harvest(world: World, playerId: String, roomId: String, index: Int): World? {
         val garden = world.camp.plot.rooms.firstOrNull { it.id == roomId } ?: return null
         val bed = garden.beds.getOrNull(index)?.takeIf(::ready) ?: return null
+        if (!Neighbours.mayTake(world, playerId, garden)) return null
         val crop = bed.crop ?: return null
         val worked = work(world, playerId, picking) ?: return null
         val picked = withBeds(worked, garden.id) { beds -> beds.replace(index, Bed()) }

@@ -108,11 +108,12 @@ fun LobbyScreen(
     state: Session.Lobby,
     onOpen: (String) -> Unit,
     onPlaySolo: () -> Unit,
-    onCreate: (Mode) -> Unit,
+    onCreate: (Mode, Boolean) -> Unit,
     onJoin: (String) -> Unit,
 ) {
     val colors = OllTheme.colors
     var mode by rememberSaveable { mutableStateOf(Mode.BESTIES) }
+    var neighbours by rememberSaveable { mutableStateOf(false) }
     var code by rememberSaveable { mutableStateOf("") }
     val hasWorlds = state.worlds.isNotEmpty()
 
@@ -189,17 +190,44 @@ fun LobbyScreen(
             }
         }
 
+        Text("Where you live", style = OllType.heading, color = colors.ink, modifier = Modifier.semantics { heading() })
+        Column(Modifier.selectableGroup(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            listOf(
+                false to ("Live together" to "One home and one chest, shared"),
+                true to ("Next door" to "A lot, a camp and a chest each. Visit any time"),
+            ).forEach { (option, words) ->
+                val selected = option == neighbours
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 48.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(colors.surfaceRaised)
+                        .border(2.dp, if (selected) colors.ink else colors.line, RoundedCornerShape(12.dp))
+                        .selectable(selected = selected, role = Role.RadioButton, onClick = { neighbours = option })
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text(words.first, style = OllType.heading, color = colors.ink)
+                        if (selected) Text("Chosen", style = OllType.tag, color = colors.ink)
+                    }
+                    Text(words.second, style = OllType.body, color = colors.inkMuted)
+                }
+            }
+        }
+
         // With worlds listed above, creating another is a secondary choice; for a first world it's the main one.
         if (hasWorlds) {
             SecondaryButton(
                 text = if (state.busy) "Creating…" else "Create a new world",
-                onClick = { onCreate(mode) },
+                onClick = { onCreate(mode, neighbours) },
                 enabled = !state.busy,
                 modifier = Modifier.fillMaxWidth(),
             )
         } else PrimaryButton(
             text = if (state.busy) "Creating…" else "Create our world",
-            onClick = { onCreate(mode) },
+            onClick = { onCreate(mode, neighbours) },
             enabled = !state.busy,
             modifier = Modifier.fillMaxWidth(),
         )

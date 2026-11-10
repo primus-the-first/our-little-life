@@ -34,6 +34,7 @@ import com.ourlittlelife.rules.RaceOutcome
 import com.ourlittlelife.rules.Races
 import com.ourlittlelife.rules.Interiors
 import com.ourlittlelife.rules.Look
+import com.ourlittlelife.rules.Neighbours
 import com.ourlittlelife.rules.ObjectActions
 import com.ourlittlelife.rules.Outdoors
 import com.ourlittlelife.rules.Placement
@@ -193,6 +194,35 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     var view3d by mutableStateOf(viewPrefs.getBoolean("3d", strongPhone(application)))
         private set
 
+    /** Next-door neighbours: a lot, a camp and a chest each. */
+    val isNeighbours: Boolean get() = world?.neighbours == true
+
+    /** A room on your own lot (always, when you live together). */
+    fun isMine(room: Room): Boolean = world?.let { Neighbours.owns(it, myId, room) } ?: true
+
+    private fun mayTakeFrom(garden: Room): Boolean {
+        val ok = world?.let { Neighbours.mayTake(it, myId, garden) } ?: true
+        if (!ok) {
+            selection = null
+            message = "This is ${partnerName ?: "your neighbour"}'s garden. They can switch on Help yourself."
+        }
+        return ok
+    }
+
+    /** What's in a chest: yours, or your neighbour's when it's the one on their lot. */
+    fun chestAt(obj: PlotObject): com.ourlittlelife.rules.Storage {
+        val w = world ?: return camp.storage
+        val owner = Neighbours.ownerAt(w, obj.x, obj.y)
+        return if (owner == null || owner == myId) camp.storage else w.chests[owner] ?: com.ourlittlelife.rules.Storage()
+    }
+
+    /** Whether your neighbour may gather from your lot and pick from your garden. */
+    val helpYourself: Boolean get() = ready && me.helpYourself
+
+    fun chooseHelpYourself(on: Boolean) {
+        commit { w -> Neighbours.setHelpYourself(w, myId, on) }
+    }
+
     /** Whether this phone shows camp news while the game is closed. */
     var campNews by mutableStateOf(CampNews.enabled(application))
         private set
@@ -264,7 +294,9 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private fun onWorld(next: World) {
+    private fun onWorld(saved: World) {
+        // Next-door neighbours each play from their own chest and lot.
+        val next = Neighbours.asPlayer(saved, myId)
         val before = world?.takeIf { ready }?.player(myId)
         val previousDay = before?.character?.clock?.day
         val savedBefore = confirmed?.players?.get(myId)
@@ -350,7 +382,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             try {
                 // A transaction may run more than once; the last run is the one that counts.
                 val applied = AtomicBoolean(false)
-                val saved = source.update { w -> change(w).also { applied.set(it != null) } }
+                val saved = Neighbours.asPlayer(source.update { w -> Neighbours.act(w, myId, change).also { applied.set(it != null) } }, myId)
                 world = saved
                 confirmed = saved
                 onSaved(applied.get())
@@ -542,6 +574,10 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
 
     /** Opens or closes the furniture tray. */
     fun toggleFurnishing() {
+        if (!furnishing && insideRoom?.let(::isMine) == false) {
+            message = "This is ${partnerName ?: "your neighbour"}'s home. Only they can furnish it."
+            return
+        }
         furnishing = !furnishing
         holding = null
         selection = null
@@ -628,6 +664,10 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     /** Checks the action first, so you never walk over for something that can't happen, then walks over and does it. */
     fun perform(obj: PlotObject, action: Action) {
         selection = null
+        if (!Neighbours.mayGather(world!!, myId, obj)) {
+            message = "That's ${partnerName ?: "your neighbour"}'s. They can switch on Help yourself."
+            return
+        }
         when (val result = camp.use(character, obj, action)) {
             is UseResult.Done -> {
                 val spot = Walking.spotBeside(plot, obj, characterTile, occupied = occupied())
@@ -753,6 +793,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
 
     /** Plants [crop] in a garden bed: seeds bought from the chest, then a few minutes' work. */
     fun plant(garden: Room, index: Int, crop: Crop) {
+        if (!mayTakeFrom(garden)) return
         selection = null
         when (val check = Gardening.plant(world!!, myId, garden.id, index, crop)) {
             is GardenResult.Missing -> message = describeShortfall(check.shortfall) + " in the chest."
@@ -781,6 +822,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun harvest(garden: Room, index: Int) {
+        if (!mayTakeFrom(garden)) return
         selection = null
         val crop = garden.beds.getOrNull(index)?.crop ?: return
         if (Gardening.harvest(world!!, myId, garden.id, index) == null) return

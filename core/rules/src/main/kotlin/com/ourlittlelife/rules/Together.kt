@@ -77,6 +77,7 @@ object Together {
      */
     fun use(world: World, playerId: String, obj: PlotObject, action: Action): World? {
         val player = world.player(playerId)
+        if (!Neighbours.mayGather(world, playerId, obj)) return null
         val done = world.camp.use(player.character, obj, action) as? UseResult.Done ?: return null
         val bonus = companyBonus[action]?.takeIf { hasCompany(world, player) } ?: 0
         val character = if (bonus > 0) done.character.copy(needs = done.character.needs.plus(mapOf(SOCIAL to bonus))) else done.character

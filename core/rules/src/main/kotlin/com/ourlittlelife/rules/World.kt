@@ -47,6 +47,8 @@ data class Player(
     val fishLog: Map<FishKind, Int> = emptyMap(),
     val look: Look? = null,
     val doing: Doing? = null,
+    /** Next-door neighbours: whether the other may gather from your lot and pick from your garden. */
+    val helpYourself: Boolean = false,
 ) {
     val tile: Pair<Int, Int> get() = tileX to tileY
 }
@@ -79,7 +81,13 @@ data class World(
     val camp: Camp,
     val players: Map<String, Player>,
     val minVersion: Int = 0,
+    /** Next-door neighbours: each player's lot, and their own chest. Both empty when living together. */
+    val homes: Map<String, Area> = emptyMap(),
+    val chests: Map<String, Storage> = emptyMap(),
 ) {
+    /** Two lots side by side, one each, rather than one shared home. */
+    val neighbours: Boolean get() = homes.isNotEmpty()
+
     val day: Int get() = players.values.maxOf { it.character.clock.day }
 
     fun player(id: String): Player = players.getValue(id)
@@ -113,18 +121,29 @@ object Worlds {
     fun newCode(random: Random = Random.Default): String =
         (1..6).map { CODE_ALPHABET[random.nextInt(CODE_ALPHABET.length)] }.joinToString("")
 
-    fun create(id: String, code: String, mode: Mode, hostId: String, hostName: String): World {
-        val (x, y) = spawnTiles.first()
-        return World(id, code, mode, Camp(WorldMap.expand(StarterPlot.create())), mapOf(hostId to Player(hostId, Character(hostName), x, y)))
+    /** With [neighbours], the yard is two lots with a camp each: the host takes the west one. */
+    fun create(id: String, code: String, mode: Mode, hostId: String, hostName: String, neighbours: Boolean = false): World {
+        if (!neighbours) {
+            val (x, y) = spawnTiles.first()
+            return World(id, code, mode, Camp(WorldMap.expand(StarterPlot.create())), mapOf(hostId to Player(hostId, Character(hostName), x, y)))
+        }
+        val empty = World(id, code, mode, Camp(WorldMap.expand(StarterPlot.createForNeighbours())), emptyMap(), homes = mapOf(hostId to WorldMap.WEST_LOT))
+        val (x, y) = Neighbours.doorstep(empty, hostId)
+        return empty.copy(players = mapOf(hostId to Player(hostId, Character(hostName), x, y)), chests = mapOf(hostId to Storage()))
     }
 
     /** The second player joins on the world's current day, at the free spot by the fire. */
     fun join(world: World, playerId: String, name: String): JoinResult {
         if (playerId in world.players) return JoinResult.AlreadyIn(world)
         if (world.players.size >= MAX_PLAYERS) return JoinResult.Full
+        val character = Character(name, clock = Clock.startOfDay(world.day))
+        if (world.neighbours) {
+            val moved = world.copy(homes = world.homes + (playerId to WorldMap.EAST_LOT), chests = world.chests + (playerId to Storage()))
+            val (x, y) = Neighbours.doorstep(moved, playerId)
+            return JoinResult.Joined(moved.withPlayer(Player(playerId, character, x, y)))
+        }
         val taken = world.players.values.map { it.tile }.toSet()
         val (x, y) = spawnTiles.firstOrNull { it !in taken } ?: spawnTiles.last()
-        val character = Character(name, clock = Clock.startOfDay(world.day))
         return JoinResult.Joined(world.withPlayer(Player(playerId, character, x, y)))
     }
 
@@ -150,7 +169,8 @@ object Worlds {
         val ids = world.players.keys.toList()
         val characters = ids.map { world.player(it).character }
         if (!Rules.canAdvance(characters)) return world
-        val woken = Rules.advanceDay(characters, restful = world.camp.hasRoof)
+        // Living together, one roof covers you both; next door, it's the cabin on your own lot that counts.
+        val woken = ids.mapIndexed { i, id -> Rules.advanceDay(characters, restful = Neighbours.hasRoof(world, id))[i] }
         val players = ids.zip(woken).associate { (id, character) ->
             id to world.player(id).copy(character = character, sleptAt = null, gesturesToday = emptyList())
         }
@@ -179,11 +199,12 @@ object Worlds {
         var current = world
         val plan = listOf(ObjectKind.CAMPFIRE to StarterActions.cook, ObjectKind.WASHBASIN to StarterActions.wash)
         plan.forEach { (kind, action) ->
-            val obj = current.camp.plot.objects.firstOrNull { it.kind == kind } ?: return@forEach
-            val result = current.camp.use(current.player(playerId).character, obj, action)
-            if (result is UseResult.Done) {
-                current = current.copy(camp = result.camp).withPlayer(current.player(playerId).copy(character = result.character))
-            }
+            val obj = Neighbours.mine(current, playerId, kind) ?: return@forEach
+            current = Neighbours.act(current, playerId) { w ->
+                (w.camp.use(w.player(playerId).character, obj, action) as? UseResult.Done)?.let { done ->
+                    w.copy(camp = done.camp).withPlayer(w.player(playerId).copy(character = done.character))
+                }
+            } ?: current
         }
         return current
     }

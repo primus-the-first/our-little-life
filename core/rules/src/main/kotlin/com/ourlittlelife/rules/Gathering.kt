@@ -81,11 +81,18 @@ data class Camp(
                 character = result.character,
                 camp = copy(
                     storage = storage.minus(kind.costs),
-                    plot = plot.copy(rooms = plot.rooms + Room(kind.name.lowercase(), kind, x, y)),
+                    plot = plot.copy(rooms = plot.rooms + Room(roomId(kind), kind, x, y)),
                 ),
             )
             else -> BuildResult.Refused(result)
         }
+    }
+
+    /** A room's id is its kind, with a number added for a second one (a neighbour's own cabin). */
+    private fun roomId(kind: RoomKind): String {
+        val base = kind.name.lowercase()
+        val taken = plot.rooms.map { it.id }.toSet()
+        return generateSequence(1) { it + 1 }.map { if (it == 1) base else "$base-$it" }.first { it !in taken }
     }
 
     /** Uses a piece of furniture inside a room, such as the cabin's bed. */
