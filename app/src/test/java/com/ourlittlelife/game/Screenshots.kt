@@ -8,6 +8,10 @@ import com.github.takahirom.roborazzi.captureScreenRoboImage
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performTextInput
+import com.ourlittlelife.rules.Moment
+import com.ourlittlelife.rules.Private
 import com.ourlittlelife.game.data.WorldSource
 import com.ourlittlelife.game.data.WorldStore
 import com.ourlittlelife.game.session.LobbyScreen
@@ -141,6 +145,42 @@ class Screenshots {
     @Test
     @Config(sdk = [34], qualifiers = "w873dp-h393dp-land-420dpi")
     fun landscape_night() = shot("landscape", night = true)
+
+    /** A Partners world, side by side, both in, with a bond and a couple of notes. */
+    private fun partners(bothIn: Boolean = true, asking: Moment? = null): World {
+        var w = Private.setMode(world(), Mode.PARTNERS)
+        w = w.withPlayer(w.player("them").copy(tileX = w.player("me").tileX + 1, tileY = w.player("me").tileY))
+        if (!bothIn) return w
+        w = Private.optIn(Private.optIn(w, "me", true)!!, "them", true)!!.copy(bond = 14)
+        w = Private.leaveNote(w, "them", "Dinner by the fire tonight?", now = 1)!!
+        w = Private.leaveNote(w, "me", "Yes. I'll bring the fish.", now = 2)!!
+        return if (asking != null) Private.ask(w, "them", asking)!! else w
+    }
+
+    private fun openPrivate(pin: Boolean) {
+        compose.onNodeWithText("Together").performClick()
+        compose.waitForIdle()
+        compose.onNodeWithText("Private").performScrollTo().performClick()
+        compose.waitForIdle()
+        if (pin) {
+            compose.onNodeWithText("PIN, 4 to 8 digits").performTextInput("2468")
+            compose.onNodeWithText("Same PIN again").performTextInput("2468")
+            compose.onNodeWithText("Set PIN").performClick()
+            compose.waitForIdle()
+        }
+    }
+
+    @Test fun private_row_night() = shot("private-row", night = true, start = partners()) { compose.onNodeWithText("Together").performClick() }
+
+    @Test fun private_gate_night() = shot("private-gate", night = true, start = partners()) { openPrivate(pin = false) }
+
+    @Test fun private_optin_day() = shot("private-optin", night = false, start = partners(bothIn = false)) { openPrivate(pin = true) }
+
+    @Test fun private_inside_night() = shot("private-inside", night = true, start = partners()) { openPrivate(pin = true) }
+
+    @Test fun private_asked_day() = shot("private-asked", night = false, start = partners(asking = Moment.CUDDLE)) { openPrivate(pin = true) }
+
+    @Test fun private_card_night() = shot("private-card", night = true, start = partners(asking = Moment.CUDDLE))
 
     @Test fun lobby_night() = screen("lobby", night = true) {
         LobbyScreen(

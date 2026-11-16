@@ -32,6 +32,7 @@ Kotlin, Jetpack Compose, Material 3. Firebase (Auth, Firestore, Storage, Cloud F
 - Game numbers (decay rates, costs, prices) are starting values; they move to `content/` JSON in Phase 4.
 - Never commit signing keys, `google-services.json`, or anything under `art/adult/`.
 - Adult mode content exists only in Partners worlds with both players opted in.
+- Adult mode is "the private side" (`core/rules/.../Private.kt`, `home/PrivateScreen.kt`): each player opts in on their own phone, either can turn it off for both, and it sits behind a per-phone PIN on a screen that can't be captured. Moments are asked for and must be accepted; nothing is depicted (time passes, the bond grows). Notifications and anything on the main screen say who, never what. The players' own notes live in the world's saved state. Nothing explicit ever goes in this repo or the APK: both are public.
 
 ## Commands
 

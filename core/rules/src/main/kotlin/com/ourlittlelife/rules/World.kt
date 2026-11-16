@@ -49,6 +49,9 @@ data class Player(
     val doing: Doing? = null,
     /** Next-door neighbours: whether the other may gather from your lot and pick from your garden. */
     val helpYourself: Boolean = false,
+    /** Partners worlds: this player's own yes to the private side (see [Private]), and what they're asking for. */
+    val adult: Boolean = false,
+    val asking: Moment? = null,
 ) {
     val tile: Pair<Int, Int> get() = tileX to tileY
 }
@@ -84,6 +87,9 @@ data class World(
     /** Next-door neighbours: each player's lot, and their own chest. Both empty when living together. */
     val homes: Map<String, Area> = emptyMap(),
     val chests: Map<String, Storage> = emptyMap(),
+    /** Partners worlds: how close the two of you have grown (0 to 100), and the notes you've left each other. */
+    val bond: Int = 0,
+    val notes: List<Note> = emptyList(),
 ) {
     /** Two lots side by side, one each, rather than one shared home. */
     val neighbours: Boolean get() = homes.isNotEmpty()

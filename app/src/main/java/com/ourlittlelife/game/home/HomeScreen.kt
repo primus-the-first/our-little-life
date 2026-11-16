@@ -69,6 +69,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.material3.Icon
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Map
 import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.ViewInAr
@@ -124,6 +125,7 @@ fun HomeScreen(viewModel: GameViewModel = viewModel(), onBackToLobby: () -> Unit
     var settingsOpen by remember { mutableStateOf(false) }
     var inviteOpen by remember { mutableStateOf(false) }
     var bedOpen by remember { mutableStateOf(false) }
+    var privateOpen by remember { mutableStateOf(false) }
     val onTogether = { if (viewModel.partner != null) viewModel.showPartner() else inviteOpen = true }
 
     // Notices sit over the bottom of the map, so they fade out on their own instead of blocking taps.
@@ -162,6 +164,7 @@ fun HomeScreen(viewModel: GameViewModel = viewModel(), onBackToLobby: () -> Unit
             MapArea(
                 viewModel = viewModel,
                 focus = focus,
+                onPrivate = { privateOpen = true },
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxHeight()
@@ -186,6 +189,7 @@ fun HomeScreen(viewModel: GameViewModel = viewModel(), onBackToLobby: () -> Unit
             MapArea(
                 viewModel = viewModel,
                 focus = focus,
+                onPrivate = { privateOpen = true },
                 modifier = Modifier
                     .weight(1f)
                     .padding(horizontal = 16.dp),
@@ -208,7 +212,7 @@ fun HomeScreen(viewModel: GameViewModel = viewModel(), onBackToLobby: () -> Unit
         is Selection.Thing -> ObjectSheet(selection.obj, viewModel, character.asleep)
         is Selection.InRoom -> RoomSheet(selection.room, viewModel, character.asleep)
         is Selection.Ground -> GroundSheet(selection, viewModel, character.asleep)
-        is Selection.Person -> PersonSheet(selection.playerId, viewModel)
+        is Selection.Person -> PersonSheet(selection.playerId, viewModel, onPrivate = { privateOpen = true })
         is Selection.Piece -> PieceSheet(selection, viewModel, character.asleep)
         null -> Unit
     }
@@ -282,11 +286,12 @@ fun HomeScreen(viewModel: GameViewModel = viewModel(), onBackToLobby: () -> Unit
     if (settingsOpen) SettingsSheet(viewModel = viewModel, onDismiss = { settingsOpen = false }, onBackToLobby = onBackToLobby)
     if (inviteOpen) InviteSheet(viewModel = viewModel, onDismiss = { inviteOpen = false })
     if (bedOpen) BedSheet(viewModel = viewModel, onDismiss = { bedOpen = false })
+    if (privateOpen) PrivateSpace(viewModel = viewModel, onClose = { privateOpen = false })
 }
 
 /** The plot with its notices and the build toggle laid over it. */
 @Composable
-private fun MapArea(viewModel: GameViewModel, focus: Pair<Int, Int>, modifier: Modifier = Modifier) {
+private fun MapArea(viewModel: GameViewModel, focus: Pair<Int, Int>, modifier: Modifier = Modifier, onPrivate: () -> Unit = {}) {
     val colors = OllTheme.colors
     val character = viewModel.character
     Box(modifier = modifier.clip(RoundedCornerShape(20.dp))) {
@@ -419,6 +424,14 @@ private fun MapArea(viewModel: GameViewModel, focus: Pair<Int, Int>, modifier: M
                 text = "Waiting for ${viewModel.partnerName ?: "your friend"} to say yes to a walk.",
                 yes = null,
                 no = "Call it off" to viewModel::declineWalk,
+                modifier = cards,
+            )
+        } else if (viewModel.momentInvite != null && viewModel.message == null) {
+            // Says who, never what: the rest is behind the PIN.
+            WalkCard(
+                text = "${viewModel.momentInvite?.first?.character?.name} is thinking of you.",
+                yes = "Open" to onPrivate,
+                no = "Not now" to viewModel::declineMoment,
                 modifier = cards,
             )
         } else if (note != null) {
@@ -1005,7 +1018,7 @@ private fun ChestContents(storage: Storage) {
 
 /** Tapping a person (or Me, or Together, in the bar): who they are, how they're doing, and what you can do. */
 @Composable
-private fun PersonSheet(playerId: String, viewModel: GameViewModel) {
+private fun PersonSheet(playerId: String, viewModel: GameViewModel, onPrivate: () -> Unit = {}) {
     val colors = OllTheme.colors
     val player = viewModel.playerFor(playerId) ?: return
     val person = player.character
@@ -1077,6 +1090,16 @@ private fun PersonSheet(playerId: String, viewModel: GameViewModel) {
             }
         }
 
+        if (!isMe && viewModel.privateOffered) {
+            ActionRow(
+                title = "Private",
+                icon = Icons.Rounded.Lock,
+                facts = listOf(Fact("Just the two of you")),
+                tint = colors.rose,
+                onClick = { viewModel.dismissSelection(); onPrivate() },
+            )
+        }
+
         Section("Needs")
         Need.entries.forEach { need -> NeedBar(label = need.label, value = person.needs[need], icon = OllIcons.of(need)) }
         Text("Skills arrive with careers.", style = OllType.caption, color = colors.inkMuted)
@@ -1126,6 +1149,14 @@ private fun SettingsSheet(viewModel: GameViewModel, onDismiss: () -> Unit, onBac
         }
 
         Section("This world")
+        if (!viewModel.isSolo) {
+            Text("What you two are", style = OllType.caption, color = colors.inkMuted)
+            Row(modifier = Modifier.selectableGroup(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                com.ourlittlelife.rules.Mode.entries.forEach { option ->
+                    ChoiceChip(option.label, chosen = option == viewModel.mode, onClick = { viewModel.chooseMode(option) })
+                }
+            }
+        }
         Text(
             if (viewModel.isSolo) {
                 "Your solo game, saved on this phone. To play with someone, start or join a shared world from the lobby."

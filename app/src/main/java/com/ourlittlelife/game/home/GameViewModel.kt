@@ -34,6 +34,11 @@ import com.ourlittlelife.rules.RaceOutcome
 import com.ourlittlelife.rules.Races
 import com.ourlittlelife.rules.Interiors
 import com.ourlittlelife.rules.Look
+import com.ourlittlelife.rules.Mode
+import com.ourlittlelife.rules.Moment
+import com.ourlittlelife.rules.MomentProblem
+import com.ourlittlelife.rules.Note
+import com.ourlittlelife.rules.Private
 import com.ourlittlelife.rules.Neighbours
 import com.ourlittlelife.rules.ObjectActions
 import com.ourlittlelife.rules.Outdoors
@@ -194,6 +199,74 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     var view3d by mutableStateOf(viewPrefs.getBoolean("3d", strongPhone(application)))
         private set
 
+    // ---- The private side of a Partners world (rules/Private.kt). Both say yes, moments are asked for, nothing is shown.
+
+    /** What the two of you are. */
+    val mode: Mode get() = world?.mode ?: Mode.BESTIES
+
+    fun chooseMode(mode: Mode) {
+        commit { w -> Private.setMode(w, mode).takeIf { it != w } }
+    }
+
+    /** A Partners world shared with someone: the only place the private side exists. */
+    val privateOffered: Boolean get() = !isSolo && world?.let(Private::offered) == true
+    val privateOn: Boolean get() = world?.let(Private::on) == true
+    val myAdult: Boolean get() = ready && me.adult
+    val partnerAdult: Boolean get() = partner?.adult == true
+    val bond: Int get() = world?.bond ?: 0
+    val notes: List<Note> get() = world?.notes ?: emptyList()
+
+    /** Your partner asking you for a moment, and which. */
+    val momentInvite: Pair<Player, Moment>? get() = world?.takeIf { ready && Private.on(it) }?.let { Private.waiting(it, myId) }
+
+    /** The moment you've asked for and are waiting on. */
+    val askingMoment: Moment? get() = if (ready) me.asking else null
+
+    /** A moment the two of you just shared, for the private screen to mark. */
+    var momentShared by mutableStateOf<Moment?>(null)
+        private set
+
+    fun clearMoment() {
+        momentShared = null
+    }
+
+    fun choosePrivate(on: Boolean) {
+        commit { w -> Private.optIn(w, myId, on) }
+    }
+
+    /** A forgotten PIN: off for both, so each has to say yes again. */
+    fun resetPrivate() {
+        commit { w -> Private.reset(w).takeIf { it != w } }
+    }
+
+    /** What stands in the way of asking for [moment], or null when nothing does. */
+    fun momentProblem(moment: Moment): MomentProblem? {
+        val w = world ?: return MomentProblem.OFF
+        return Private.problem(here(w), myId, moment)
+    }
+
+    fun askMoment(moment: Moment) {
+        commit { w -> Private.ask(here(w), myId, moment) }
+    }
+
+    /** "Not now" to theirs, or taking back yours. */
+    fun declineMoment() {
+        commit { w -> Private.decline(w, myId).takeIf { it != w } }
+    }
+
+    fun acceptMoment() {
+        val moment = momentInvite?.second ?: return
+        commit(onSaved = { applied -> if (applied) momentShared = moment else message = "That moment has passed." }) { w -> Private.accept(here(w), myId) }
+    }
+
+    fun leaveNote(text: String) {
+        commit { w -> Private.leaveNote(w, myId, text, System.currentTimeMillis()) }
+    }
+
+    fun deleteNote(id: String) {
+        commit { w -> Private.deleteNote(w, id).takeIf { it != w } }
+    }
+
     /** Next-door neighbours: a lot, a camp and a chest each. */
     val isNeighbours: Boolean get() = world?.neighbours == true
 
@@ -300,6 +373,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         val before = world?.takeIf { ready }?.player(myId)
         val previousDay = before?.character?.clock?.day
         val savedBefore = confirmed?.players?.get(myId)
+        val bondBefore = world?.bond
         world = next
         confirmed = next
         if (!ready) return
@@ -313,6 +387,13 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             val who = next.players[greeting.from]?.character?.name ?: "Someone"
             message = "$who ${greeting.gesture.past}."
             waveFor(mine = false)
+        }
+
+        // Your partner said yes to the moment you asked for. Only the private screen says what it was.
+        val asked = before?.asking
+        if (asked != null && now.asking == null && bondBefore != null && next.bond > bondBefore) {
+            momentShared = asked
+            message = "${partnerName ?: "Your partner"} said yes."
         }
 
         // Your partner said yes to your walk: play it here too, with them leading.

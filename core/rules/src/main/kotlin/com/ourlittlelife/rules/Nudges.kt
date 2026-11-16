@@ -18,6 +18,9 @@ data class Glance(
     val greetingCount: Int = 0,
     val greeting: Gesture? = null,
     val readyCrops: Set<Crop> = emptySet(),
+    /** Something from your partner on the private side: they're asking, or when their latest note was left. */
+    val partnerAsking: Boolean = false,
+    val partnerNoteAt: Long = 0,
 ) {
     fun encode(): String = json.encodeToString(serializer(), this)
 
@@ -37,6 +40,8 @@ data class Glance(
                 greetingCount = greeting?.count ?: 0,
                 greeting = greeting?.gesture,
                 readyCrops = world.camp.plot.rooms.flatMap { it.beds }.filter(Gardening::ready).mapNotNull { it.crop }.toSet(),
+                partnerAsking = Private.on(world) && partner?.asking != null,
+                partnerNoteAt = if (Private.on(world)) world.notes.filter { it.from != me }.maxOfOrNull { it.at } ?: 0 else 0,
             )
         }
 
@@ -44,7 +49,7 @@ data class Glance(
     }
 }
 
-enum class NudgeKind { JOINED, NEW_DAY, PARTNER_ASLEEP, GREETING, STARGAZING, WALK, CROPS }
+enum class NudgeKind { JOINED, NEW_DAY, PARTNER_ASLEEP, GREETING, STARGAZING, WALK, CROPS, PRIVATE }
 
 /** One notification: what it's about, a short title, and a line underneath. */
 data class Nudge(val kind: NudgeKind, val title: String, val text: String)
@@ -76,6 +81,10 @@ object Nudges {
                 Activity.WALK_INVITE -> nudges += Nudge(NudgeKind.WALK, "$partner would like a walk", "Head out together.")
                 null -> Unit
             }
+        }
+        // The private side never says what: a notification can be read over your shoulder.
+        if (partner != null && ((after.partnerAsking && !before.partnerAsking) || after.partnerNoteAt > before.partnerNoteAt)) {
+            nudges += Nudge(NudgeKind.PRIVATE, "$partner is thinking of you", "Open the game when you have a moment.")
         }
         val ripe = after.readyCrops - before.readyCrops
         if (ripe.isNotEmpty()) {
