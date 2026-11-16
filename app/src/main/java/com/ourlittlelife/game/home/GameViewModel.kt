@@ -640,6 +640,16 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         selection = null
     }
 
+    /** Opens your own card (needs, look), as tapping yourself on the map does. */
+    fun showMe() {
+        selection = Selection.Person(myId)
+    }
+
+    /** Opens your partner's card: say hello, ask for a walk. */
+    fun showPartner() {
+        partner?.let { selection = Selection.Person(it.id) }
+    }
+
     /** Walks step by step along the shortest route, then runs [onArrival]. A new tap cancels a walk. Walking is free. */
     private fun walkTo(target: Pair<Int, Int>, saveOnArrival: Boolean, onArrival: () -> Unit = {}) {
         val route = Walking.path(plot, characterTile, target, occupied = occupied())

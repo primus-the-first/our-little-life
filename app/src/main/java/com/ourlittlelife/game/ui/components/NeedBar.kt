@@ -11,7 +11,10 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.size
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -28,7 +31,7 @@ private const val GOOD = 60
 
 /** One need from 0 to 100. Below 30 it also says "Low" in words, so state never relies on colour. */
 @Composable
-fun NeedBar(label: String, value: Int, modifier: Modifier = Modifier) {
+fun NeedBar(label: String, value: Int, modifier: Modifier = Modifier, icon: ImageVector? = null) {
     val colors = OllTheme.colors
     val fill = when {
         value >= GOOD -> colors.leaf
@@ -44,7 +47,10 @@ fun NeedBar(label: String, value: Int, modifier: Modifier = Modifier) {
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Bottom) {
-            Text(label, style = OllType.caption, color = colors.ink)
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                if (icon != null) Icon(icon, contentDescription = null, tint = colors.inkMuted, modifier = Modifier.size(16.dp))
+                Text(label, style = OllType.caption, color = colors.ink)
+            }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 if (value < LOW) {
                     Text("LOW", style = OllType.tag, color = colors.berry)

@@ -38,6 +38,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
@@ -50,9 +51,33 @@ import com.ourlittlelife.game.day.describeShortfall
 import com.ourlittlelife.game.day.formatDuration
 import com.ourlittlelife.game.day.formatTime
 import com.ourlittlelife.game.day.moodWord
+import com.ourlittlelife.game.day.factsOf
+import com.ourlittlelife.game.ui.components.ActionRow
+import com.ourlittlelife.game.ui.components.BarItem
+import com.ourlittlelife.game.ui.components.ChoiceChip
+import com.ourlittlelife.game.ui.components.Fact
 import com.ourlittlelife.game.ui.components.NeedBar
+import com.ourlittlelife.game.ui.components.NeedMeter
+import com.ourlittlelife.game.ui.components.OllIcons
+import com.ourlittlelife.game.ui.components.PopCard
 import com.ourlittlelife.game.ui.components.PrimaryButton
 import com.ourlittlelife.game.ui.components.SecondaryButton
+import com.ourlittlelife.game.ui.components.SettingSwitch
+import com.ourlittlelife.game.ui.components.StatChip
+import com.ourlittlelife.game.ui.components.StatusChip
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.material3.Icon
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Map
+import androidx.compose.material.icons.rounded.Notifications
+import androidx.compose.material.icons.rounded.ViewInAr
+import androidx.compose.material.icons.rounded.VolunteerActivism
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.platform.LocalContext
+import com.ourlittlelife.rules.Needs
+import com.ourlittlelife.rules.Together
 import com.ourlittlelife.game.ui.theme.OllTheme
 import com.ourlittlelife.game.ui.theme.OllType
 import androidx.compose.ui.graphics.Color
@@ -96,7 +121,10 @@ fun HomeScreen(viewModel: GameViewModel = viewModel(), onBackToLobby: () -> Unit
             }
         }
     }
-    var needsOpen by remember { mutableStateOf(false) }
+    var settingsOpen by remember { mutableStateOf(false) }
+    var inviteOpen by remember { mutableStateOf(false) }
+    var bedOpen by remember { mutableStateOf(false) }
+    val onTogether = { if (viewModel.partner != null) viewModel.showPartner() else inviteOpen = true }
 
     // Notices sit over the bottom of the map, so they fade out on their own instead of blocking taps.
     LaunchedEffect(viewModel.message) {
@@ -111,7 +139,7 @@ fun HomeScreen(viewModel: GameViewModel = viewModel(), onBackToLobby: () -> Unit
     val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
 
     if (landscape) {
-        // Landscape: the day, materials and bed button in a side panel; the map gets the rest.
+        // Landscape: the day, needs, materials and the bar in a side panel; the map gets the rest.
         Row(
             modifier = Modifier
                 .fillMaxSize()
@@ -120,16 +148,16 @@ fun HomeScreen(viewModel: GameViewModel = viewModel(), onBackToLobby: () -> Unit
         ) {
             Column(
                 modifier = Modifier
-                    .width(300.dp)
+                    .width(320.dp)
                     .fillMaxHeight()
                     .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                Hud(clock, character.name, character.needs.mood, onOpenNeeds = { needsOpen = true }, stacked = true)
-                PartnerLine(viewModel)
-                ResourceStrip(storage = viewModel.camp.storage)
+                TopLine(clock, coins = viewModel.camp.storage[Resource.COINS], onSettings = { settingsOpen = true })
+                NeedsCard(character.needs, onClick = viewModel::showMe)
+                StatusStrip(viewModel, wrap = true)
                 Spacer(Modifier.weight(1f))
-                DayButton(viewModel)
+                BottomBar(viewModel, onMe = viewModel::showMe, onTogether = onTogether, onBed = { bedOpen = true })
             }
             MapArea(
                 viewModel = viewModel,
@@ -147,18 +175,14 @@ fun HomeScreen(viewModel: GameViewModel = viewModel(), onBackToLobby: () -> Unit
                 .background(colors.surface)
                 .safeDrawingPadding(),
         ) {
-            Hud(
+            TopLine(
                 clock = clock,
-                name = character.name,
-                mood = character.needs.mood,
-                onOpenNeeds = { needsOpen = true },
-                modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 8.dp),
+                coins = viewModel.camp.storage[Resource.COINS],
+                onSettings = { settingsOpen = true },
+                modifier = Modifier.padding(start = 16.dp, end = 8.dp, top = 8.dp),
             )
-            PartnerLine(viewModel, modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp))
-            ResourceStrip(
-                storage = viewModel.camp.storage,
-                modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
-            )
+            NeedsCard(character.needs, onClick = viewModel::showMe, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+            StatusStrip(viewModel, modifier = Modifier.padding(bottom = 10.dp))
             MapArea(
                 viewModel = viewModel,
                 focus = focus,
@@ -166,7 +190,17 @@ fun HomeScreen(viewModel: GameViewModel = viewModel(), onBackToLobby: () -> Unit
                     .weight(1f)
                     .padding(horizontal = 16.dp),
             )
-            Box(Modifier.padding(16.dp)) { DayButton(viewModel) }
+            BottomBar(
+                viewModel,
+                onMe = viewModel::showMe,
+                onTogether = onTogether,
+                onBed = { bedOpen = true },
+                modifier = Modifier
+                    .padding(top = 12.dp)
+                    .drawBehind { drawRect(colors.popShadow.copy(alpha = colors.popShadow.alpha / 2), topLeft = Offset(0f, -2.dp.toPx()), size = size.copy(height = 2.dp.toPx())) }
+                    .background(colors.surfaceRaised)
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+            )
         }
     }
 
@@ -245,9 +279,9 @@ fun HomeScreen(viewModel: GameViewModel = viewModel(), onBackToLobby: () -> Unit
         }
     }
 
-    if (needsOpen) {
-        NeedsSheet(viewModel = viewModel, onDismiss = { needsOpen = false }, onBackToLobby = onBackToLobby)
-    }
+    if (settingsOpen) SettingsSheet(viewModel = viewModel, onDismiss = { settingsOpen = false }, onBackToLobby = onBackToLobby)
+    if (inviteOpen) InviteSheet(viewModel = viewModel, onDismiss = { inviteOpen = false })
+    if (bedOpen) BedSheet(viewModel = viewModel, onDismiss = { bedOpen = false })
 }
 
 /** The plot with its notices and the build toggle laid over it. */
@@ -357,47 +391,42 @@ private fun MapArea(viewModel: GameViewModel, focus: Pair<Int, Int>, modifier: M
             )
         }
 
-        val lowest = Need.entries.minBy { character.needs[it] }
-        val lowNeed = character.needs[lowest] < 30
         val note = when {
             viewModel.needsUpdate -> "This world was saved by a newer version of the game. Install the latest APK to keep playing."
             viewModel.message != null -> viewModel.message
             room != null -> null
             viewModel.buildMode -> "Build mode: tap open ground to place a room."
-            lowNeed -> "${lowest.label} is low. Tap something nearby that helps."
+            character.asleep -> viewModel.partnerName?.let { "Asleep. ${Clock.startOfDay(character.clock.day + 1).weekday} starts when $it sleeps too." }
             else -> null
         }
         val inviter = viewModel.walkInviteFrom
         val doing = viewModel.busy
+        // Cards sit at the bottom of the map, in reach of a thumb, and above the furniture tray when it's open.
+        val cards = Modifier
+            .align(Alignment.BottomCenter)
+            .padding(start = 12.dp, end = 12.dp, bottom = if (viewModel.furnishing) TRAY_HEIGHT + 12.dp else 12.dp)
         if (doing != null) {
-            BusyCard(doing, onHurry = viewModel::hurry, onStop = viewModel::stopBusy, modifier = Modifier.align(Alignment.TopCenter).padding(12.dp))
+            BusyCard(doing, onHurry = viewModel::hurry, onStop = viewModel::stopBusy, modifier = cards)
         } else if (inviter != null && !viewModel.touring) {
             WalkCard(
                 text = "${inviter.character.name} wants to go for a walk in the forest.",
                 yes = "Go for a walk" to viewModel::acceptWalk,
                 no = "Not now" to viewModel::declineWalk,
-                modifier = Modifier.align(Alignment.TopCenter).padding(12.dp),
+                modifier = cards,
             )
         } else if (viewModel.askedForWalk && viewModel.message == null) {
             WalkCard(
                 text = "Waiting for ${viewModel.partnerName ?: "your friend"} to say yes to a walk.",
                 yes = null,
                 no = "Call it off" to viewModel::declineWalk,
-                modifier = Modifier.align(Alignment.TopCenter).padding(12.dp),
+                modifier = cards,
             )
         } else if (note != null) {
-            Notice(
-                text = note,
-                low = viewModel.message == null && !viewModel.buildMode && lowNeed,
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .padding(12.dp)
-                    .clickable(onClick = viewModel::clearMessage),
-            )
+            Notice(text = note, onClick = viewModel::clearMessage, modifier = cards)
         }
 
         if (room != null) {
-            if (doing == null && inviter == null && !viewModel.askedForWalk && note == null) Text(
+            Text(
                 room.kind.label,
                 style = OllType.heading,
                 color = colors.ink,
@@ -412,185 +441,126 @@ private fun MapArea(viewModel: GameViewModel, focus: Pair<Int, Int>, modifier: M
             if (viewModel.furnishing) {
                 FurnishTray(viewModel, modifier = Modifier.align(Alignment.BottomCenter))
             } else {
-                SecondaryButton(
-                    text = "Furnish",
-                    onClick = viewModel::toggleFurnishing,
-                    modifier = Modifier
-                        .align(Alignment.BottomStart)
-                        .padding(12.dp),
-                )
-                SecondaryButton(
-                    text = "Head outside",
-                    onClick = viewModel::goOutside,
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .padding(12.dp),
-                )
+                PopCard(onClick = viewModel::goOutside, modifier = Modifier.align(Alignment.TopEnd).padding(12.dp)) {
+                    Row(
+                        modifier = Modifier.heightIn(min = 48.dp).padding(horizontal = 14.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(OllIcons.outside, contentDescription = null, tint = colors.ink, modifier = Modifier.size(20.dp))
+                        Text("Head outside", style = OllType.button, color = colors.ink)
+                    }
+                }
             }
-        } else {
-            // A tap on grass normally walks there; build mode turns it into "place a room here".
-            SecondaryButton(
-                text = if (viewModel.buildMode) "Done building" else "Build",
-                onClick = viewModel::toggleBuildMode,
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(12.dp),
+        }
+    }
+}
+
+/** The day and the clock, your coins, and the way into settings. */
+@Composable
+private fun TopLine(clock: Clock, coins: Int, onSettings: () -> Unit, modifier: Modifier = Modifier) {
+    val colors = OllTheme.colors
+    Row(modifier = modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text("Day ${clock.day} · ${clock.weekday}", style = OllType.title, color = colors.ink, maxLines = 1, modifier = Modifier.semantics { heading() })
+            Text(
+                if (clock.late) "${formatTime(clock.minute)} · Late" else formatTime(clock.minute),
+                style = OllType.stat,
+                color = if (clock.late) colors.peachText else colors.inkMuted,
             )
         }
-    }
-}
-
-/** The screen's one primary action: go to bed. Once you're asleep it shows who the day is waiting for. */
-@Composable
-private fun DayButton(viewModel: GameViewModel) {
-    val character = viewModel.character
-    val clock = character.clock
-    if (character.asleep) {
-        PrimaryButton(
-            text = "Waiting for ${viewModel.partnerName ?: "your friend"}",
-            detail = "${Clock.startOfDay(clock.day + 1).weekday} starts when they sleep",
-            onClick = {},
-            enabled = false,
-            modifier = Modifier.fillMaxWidth(),
-        )
-    } else {
-        PrimaryButton(
-            text = "Go to bed",
-            detail = if (clock.late) "It's late" else null,
-            onClick = viewModel::sleep,
-            modifier = Modifier.fillMaxWidth(),
-        )
-    }
-}
-
-/** The day, the clock and the mood chip. [stacked] puts the chip under the clock, for the narrow landscape panel. */
-@Composable
-private fun Hud(
-    clock: Clock,
-    name: String,
-    mood: Int,
-    onOpenNeeds: () -> Unit,
-    modifier: Modifier = Modifier,
-    stacked: Boolean = false,
-) {
-    if (stacked) {
-        Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            HudContent(clock, name, mood, onOpenNeeds)
+        PopCard(color = colors.honey, radius = 8.dp) {
+            StatChip(value = "%,d".format(coins), label = "Coins", icon = OllIcons.coins, fill = colors.honey)
         }
-    } else {
-        Row(
-            modifier = modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.Top,
+        Box(
+            modifier = Modifier
+                .padding(start = 4.dp)
+                .size(48.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .clickable(role = Role.Button, onClickLabel = "Settings", onClick = onSettings),
+            contentAlignment = Alignment.Center,
         ) {
-            HudContent(clock, name, mood, onOpenNeeds)
+            Icon(OllIcons.settings, contentDescription = "Settings", tint = colors.ink, modifier = Modifier.size(24.dp))
         }
     }
 }
 
+/** Your five needs, always in view. Tap for the full picture. */
 @Composable
-private fun HudContent(clock: Clock, name: String, mood: Int, onOpenNeeds: () -> Unit) {
-    val colors = OllTheme.colors
-    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Text(
-            "Day ${clock.day} · ${clock.weekday}",
-            style = OllType.title,
-            color = colors.ink,
-            modifier = Modifier.semantics { heading() },
-        )
-        Text(
-            if (clock.late) "${formatTime(clock.minute)} · Late" else formatTime(clock.minute),
-            style = OllType.stat,
-            color = colors.inkMuted,
-        )
+private fun NeedsCard(needs: Needs, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    PopCard(modifier = modifier.fillMaxWidth(), onClick = onClick, onClickLabel = "Show your needs") {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Need.entries.forEach { need ->
+                NeedMeter(label = need.label, value = needs[need], icon = OllIcons.of(need), modifier = Modifier.weight(1f))
+            }
+        }
     }
-    val word = moodWord(mood)
-    val chipColor = when (word) {
-        "Cheerful" -> colors.leaf
-        "Fine" -> colors.honey
-        else -> colors.surfaceSunken
-    }
-    Text(
-        "$name · $word",
-        style = OllType.button,
-        color = if (word == "Grumpy") colors.berry else colors.onFill,
-        modifier = Modifier
-            .heightIn(min = 48.dp)
-            .clip(RoundedCornerShape(12.dp))
-            .background(chipColor)
-            .clickable(role = Role.Button, onClickLabel = "Show needs", onClick = onOpenNeeds)
-            .padding(horizontal = 14.dp, vertical = 14.dp),
-    )
 }
 
-/** Your partner at a glance, or, before anyone has joined, the code to send them. */
+/** Who's around, then what's in your chest, on one line you can swipe along. */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun PartnerLine(viewModel: GameViewModel, modifier: Modifier = Modifier) {
+private fun StatusStrip(viewModel: GameViewModel, modifier: Modifier = Modifier, wrap: Boolean = false) {
     val colors = OllTheme.colors
     val partner = viewModel.partner
-    val text = when {
-        viewModel.isSolo -> "Playing solo · saved on this phone"
+    val storage = viewModel.camp.storage
+    val presence = when {
+        viewModel.isSolo -> "Playing solo"
         partner == null -> "Waiting for a friend · code ${viewModel.worldCode}"
         partner.character.asleep -> "${partner.character.name} is asleep"
         partner.inside != null -> "${partner.character.name} is in the ${viewModel.plot.rooms.firstOrNull { it.id == partner.inside?.roomId }?.kind?.label?.lowercase() ?: "house"}"
         else -> "${partner.character.name} is up · ${formatTime(partner.character.clock.minute)}"
     }
-    Row(
-        modifier = modifier
-            .clip(RoundedCornerShape(6.dp))
-            .background(if (partner == null) colors.surfaceSunken else colors.sky)
-            .padding(horizontal = 10.dp, vertical = 4.dp)
-            .semantics(mergeDescendants = true) {},
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(text, style = OllType.caption, color = if (partner == null) colors.ink else colors.onFill)
+    val shown = Resource.entries.filter { it != Resource.COINS && ((!it.refined && !it.food) || storage[it] > 0) }
+    val chips: @Composable () -> Unit = {
+        StatusChip(presence, fill = if (partner == null) colors.surfaceSunken else colors.sky, live = partner != null && !partner.character.asleep)
+        shown.forEach { resource -> StatChip(value = "${storage[resource]}", label = resource.label, icon = OllIcons.of(resource)) }
+    }
+    if (wrap) {
+        FlowRow(modifier = modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) { chips() }
+    } else {
+        Row(
+            modifier = modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) { chips() }
     }
 }
 
-/** What's in the shared chest, always in view. Refined materials appear once there are some. */
-@OptIn(ExperimentalLayoutApi::class)
+/**
+ * The bar along the bottom: you, your friend, building (or furnishing, indoors), and bed. Bed turns
+ * peach, the screen's one main action, when it's late or you're worn out.
+ */
 @Composable
-private fun ResourceStrip(storage: Storage, modifier: Modifier = Modifier) {
-    val colors = OllTheme.colors
-    val shown = Resource.entries.filter { (!it.refined && !it.food) || storage[it] > 0 }
-    FlowRow(
-        modifier = modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        shown.forEach { resource ->
-            Row(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(6.dp))
-                    .background(colors.surfaceSunken)
-                    .padding(horizontal = 10.dp, vertical = 4.dp)
-                    .semantics(mergeDescendants = true) {},
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(resource.label, style = OllType.caption, color = colors.inkMuted)
-                Text("${storage[resource]}", style = OllType.stat, color = colors.ink)
-            }
+private fun BottomBar(viewModel: GameViewModel, onMe: () -> Unit, onTogether: () -> Unit, onBed: () -> Unit, modifier: Modifier = Modifier) {
+    val character = viewModel.character
+    val inside = viewModel.insideRoom != null
+    Row(modifier = modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        BarItem("Me", OllIcons.me, onClick = onMe)
+        BarItem("Together", OllIcons.together, onClick = onTogether)
+        if (inside) {
+            BarItem(if (viewModel.furnishing) "Done" else "Furnish", OllIcons.furnish, onClick = viewModel::toggleFurnishing, selected = viewModel.furnishing)
+        } else {
+            BarItem(if (viewModel.buildMode) "Done" else "Build", OllIcons.build, onClick = viewModel::toggleBuildMode, selected = viewModel.buildMode)
         }
+        BarItem(
+            label = if (character.asleep) "Asleep" else "Bed",
+            icon = OllIcons.bed,
+            onClick = onBed,
+            enabled = !character.asleep,
+            emphasis = character.clock.late || character.needs[Need.ENERGY] < 30,
+        )
     }
 }
 
 @Composable
-private fun Notice(text: String, low: Boolean, modifier: Modifier = Modifier) {
+private fun Notice(text: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
     val colors = OllTheme.colors
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(colors.surfaceRaised)
-            .padding(horizontal = 12.dp, vertical = 10.dp),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        if (low) {
-            Text("LOW", style = OllType.tag, color = colors.berry)
-        }
-        Text(text, style = OllType.body, color = colors.ink)
+    PopCard(modifier = modifier.fillMaxWidth(), onClick = onClick, onClickLabel = "Dismiss") {
+        Text(text, style = OllType.body, color = colors.ink, modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp))
     }
 }
 
@@ -598,12 +568,9 @@ private fun Notice(text: String, low: Boolean, modifier: Modifier = Modifier) {
 @Composable
 private fun BusyCard(busy: Busy, onHurry: () -> Unit, onStop: () -> Unit, modifier: Modifier = Modifier) {
     val colors = OllTheme.colors
+    PopCard(modifier = modifier.fillMaxWidth()) {
     Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(colors.surfaceRaised)
-            .padding(12.dp),
+        modifier = Modifier.padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -631,18 +598,16 @@ private fun BusyCard(busy: Busy, onHurry: () -> Unit, onStop: () -> Unit, modifi
             SecondaryButton(text = "Stop", onClick = onStop, modifier = Modifier.weight(1f))
         }
     }
+    }
 }
 
 /** A walk invite on the map: what's being asked, and the answers. */
 @Composable
 private fun WalkCard(text: String, yes: Pair<String, () -> Unit>?, no: Pair<String, () -> Unit>, modifier: Modifier = Modifier) {
     val colors = OllTheme.colors
+    PopCard(modifier = modifier.fillMaxWidth()) {
     Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(colors.surfaceRaised)
-            .padding(12.dp),
+        modifier = Modifier.padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Text(text, style = OllType.body, color = colors.ink)
@@ -651,56 +616,97 @@ private fun WalkCard(text: String, yes: Pair<String, () -> Unit>?, no: Pair<Stri
             SecondaryButton(text = no.first, onClick = no.second, modifier = if (yes != null) Modifier.weight(1f) else Modifier)
         }
     }
+    }
 }
 
+/** Every sheet: a title (with an optional note beside it), then its contents, scrolling if they're long. */
 @OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun Sheet(
+    title: String,
+    onDismiss: () -> Unit,
+    note: String? = null,
+    scrim: Boolean = true,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    val colors = OllTheme.colors
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = colors.surfaceRaised,
+        contentColor = colors.ink,
+        scrimColor = if (scrim) colors.onFill.copy(alpha = 0.45f) else Color.Transparent,
+    ) {
+        Column(
+            modifier = Modifier
+                .verticalScroll(rememberScrollState())
+                .padding(start = 16.dp, end = 16.dp, bottom = 32.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Bottom) {
+                Text(title, style = OllType.title, color = colors.ink, modifier = Modifier.semantics { heading() })
+                if (note != null) Text(note, style = OllType.caption, color = colors.inkMuted)
+            }
+            content()
+        }
+    }
+}
+
+/** A heading inside a sheet. */
+@Composable
+private fun Section(text: String) {
+    Text(text, style = OllType.heading, color = OllTheme.colors.ink, modifier = Modifier.padding(top = 8.dp).semantics { heading() })
+}
+
+/** Sky for the things that are better together, honey for what earns coins, leaf for everything else. */
+@Composable
+private fun tintFor(action: com.ourlittlelife.rules.Action): Color {
+    val colors = OllTheme.colors
+    return when {
+        action in Together.companyBonus || action.id.startsWith("stargaze") || action.id == "sit_sofa" -> colors.sky
+        Resource.COINS in action.yields -> colors.honey
+        else -> colors.leaf
+    }
+}
+
 @Composable
 private fun ObjectSheet(obj: PlotObject, viewModel: GameViewModel, asleep: Boolean) {
     val colors = OllTheme.colors
     val actions = viewModel.actionsFor(obj)
-    ModalBottomSheet(
-        onDismissRequest = viewModel::dismissSelection,
-        containerColor = colors.surfaceRaised,
-        contentColor = colors.ink,
+    val usesLeft = viewModel.camp.usesLeft(obj)
+    val perDay = Gathering.usesPerDay(obj.kind)
+    Sheet(
+        title = obj.kind.label,
+        note = if (perDay != Int.MAX_VALUE) "$usesLeft of $perDay left today" else null,
+        onDismiss = viewModel::dismissSelection,
     ) {
-        Column(
-            modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 32.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            val usesLeft = viewModel.camp.usesLeft(obj)
-            val perDay = Gathering.usesPerDay(obj.kind)
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.Bottom,
-            ) {
-                Text(obj.kind.label, style = OllType.title, color = colors.ink, modifier = Modifier.semantics { heading() })
-                if (perDay != Int.MAX_VALUE) {
-                    Text("$usesLeft of $perDay left today", style = OllType.caption, color = colors.inkMuted)
-                }
-            }
-            when {
-                asleep -> Text("Everyone's asleep. Start the next day first.", style = OllType.body, color = colors.inkMuted)
-                obj.kind == ObjectKind.CHEST -> ChestContents(viewModel.chestAt(obj))
-                actions.isEmpty() -> Text(comingSoon(obj.kind), style = OllType.body, color = colors.inkMuted)
-                else -> actions.forEach { action ->
-                    val grown = usesLeft > 0
+        when {
+            asleep -> Text("Everyone's asleep. Start the next day first.", style = OllType.body, color = colors.inkMuted)
+            obj.kind == ObjectKind.CHEST -> ChestContents(viewModel.chestAt(obj))
+            actions.isEmpty() -> Text(comingSoon(obj.kind), style = OllType.body, color = colors.inkMuted)
+            else -> {
+                val grown = usesLeft > 0
+                // The first thing you can actually do is the sheet's main action.
+                val main = actions.firstOrNull { grown && viewModel.camp.storage.shortfall(it.costs).isEmpty() }
+                actions.forEach { action ->
                     val short = viewModel.camp.storage.shortfall(action.costs)
-                    SecondaryButton(
-                        text = action.name,
-                        detail = when {
+                    ActionRow(
+                        title = action.name,
+                        icon = OllIcons.of(action),
+                        facts = factsOf(action),
+                        problem = when {
                             !grown -> "Grows back tomorrow"
                             short.isNotEmpty() -> describeShortfall(short)
-                            else -> describe(action)
+                            else -> null
                         },
                         enabled = grown && short.isEmpty(),
+                        primary = action == main,
+                        tint = tintFor(action),
                         onClick = { viewModel.perform(obj, action) },
-                        modifier = Modifier.fillMaxWidth(),
                     )
                 }
             }
-            if (!asleep && obj.kind == ObjectKind.TENT) SleepHereButton(viewModel)
         }
+        if (!asleep && obj.kind == ObjectKind.TENT) SleepHereButton(viewModel)
     }
 }
 
@@ -798,12 +804,14 @@ private fun furnitureProblem(placement: FurniturePlacement): String? = when (pla
 private fun GardenBeds(garden: Room, viewModel: GameViewModel) {
     val colors = OllTheme.colors
     val thirsty = garden.beds.count { it.crop != null && !Gardening.ready(it) && !it.watered }
-    SecondaryButton(
-        text = "Water the beds",
-        detail = if (thirsty > 0) "$thirsty need water" else "Nothing needs water",
+    ActionRow(
+        title = "Water the beds",
+        icon = OllIcons.of(Need.HYGIENE),
+        facts = listOf(Fact(if (thirsty == 1) "1 bed needs water" else "$thirsty beds need water")) + factsOf(Gardening.watering),
+        problem = if (thirsty > 0) null else "Nothing needs water",
         enabled = thirsty > 0,
+        primary = thirsty > 0,
         onClick = { viewModel.water(garden) },
-        modifier = Modifier.fillMaxWidth(),
     )
     garden.beds.forEachIndexed { i, bed ->
         val crop = bed.crop
@@ -830,185 +838,135 @@ private fun GardenBeds(garden: Room, viewModel: GameViewModel) {
                         )
                     }
                 }
-                Gardening.ready(bed) -> SecondaryButton(
-                    text = "Harvest",
-                    detail = "+${crop.yield} ${crop.produce.label.lowercase()}",
+                Gardening.ready(bed) -> ActionRow(
+                    title = "Harvest",
+                    icon = OllIcons.garden,
+                    facts = listOf(Fact("+${crop.yield} ${crop.produce.label}")),
                     onClick = { viewModel.harvest(garden, i) },
-                    modifier = Modifier.fillMaxWidth(),
                 )
             }
         }
     }
 }
 
-/** One choice in "Your look": a label and a button per option, the chosen one marked. */
+/** One choice in "Your look": a label and a chip per option, the chosen one filled. */
 @Composable
 private fun LookRow(label: String, options: List<Pair<String, Int>>, chosen: Int, onChoose: (Int) -> Unit) {
     val colors = OllTheme.colors
     Text(label, style = OllType.caption, color = colors.inkMuted)
-    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        options.forEach { (name, value) ->
-            SecondaryButton(
-                text = name,
-                detail = if (value == chosen) "Chosen" else null,
-                enabled = value != chosen,
-                onClick = { onChoose(value) },
-                modifier = Modifier.weight(1f),
-            )
-        }
+    Row(modifier = Modifier.selectableGroup(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        options.forEach { (name, value) -> ChoiceChip(name, chosen = value == chosen, onClick = { onChoose(value) }) }
     }
 }
 
 /** A piece of furniture inside a room: what it offers. */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun PieceSheet(selection: Selection.Piece, viewModel: GameViewModel, asleep: Boolean) {
     val colors = OllTheme.colors
     val piece = selection.piece
-    ModalBottomSheet(
-        onDismissRequest = viewModel::dismissSelection,
-        containerColor = colors.surfaceRaised,
-        contentColor = colors.ink,
-    ) {
-        Column(
-            modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 32.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Text(piece.kind.label, style = OllType.title, color = colors.ink, modifier = Modifier.semantics { heading() })
-            if (viewModel.furnishing) {
-                SecondaryButton(
-                    text = "Move",
-                    detail = "Free",
-                    onClick = { viewModel.startMoving(piece) },
-                    modifier = Modifier.fillMaxWidth(),
+    Sheet(title = piece.kind.label, onDismiss = viewModel::dismissSelection) {
+        if (viewModel.furnishing) {
+            ActionRow(title = "Move", icon = OllIcons.go, facts = listOf(Fact("Free")), onClick = { viewModel.startMoving(piece) })
+            ActionRow(
+                title = "Put away",
+                icon = OllIcons.chest,
+                facts = listOf(Fact("Gives back ${formatCosts(piece.kind.costs)}")),
+                tint = colors.honey,
+                onClick = { viewModel.putAway(piece) },
+            )
+        } else if (asleep) {
+            Text("Everyone's asleep. Start the next day first.", style = OllType.body, color = colors.inkMuted)
+        } else {
+            if (piece.kind == FurnitureKind.BED) SleepHereButton(viewModel)
+            val actions = viewModel.actionsFor(piece)
+            val main = actions.firstOrNull { viewModel.camp.storage.shortfall(it.costs).isEmpty() }
+            actions.forEach { action ->
+                val short = viewModel.camp.storage.shortfall(action.costs)
+                ActionRow(
+                    title = action.name,
+                    icon = OllIcons.of(action),
+                    facts = factsOf(action),
+                    problem = if (short.isEmpty()) null else describeShortfall(short),
+                    enabled = short.isEmpty(),
+                    primary = action == main && piece.kind != FurnitureKind.BED,
+                    tint = tintFor(action),
+                    onClick = { viewModel.perform(selection.room, piece, action) },
                 )
-                SecondaryButton(
-                    text = "Put away",
-                    detail = "Gives back ${formatCosts(piece.kind.costs)}",
-                    onClick = { viewModel.putAway(piece) },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            } else if (asleep) {
-                Text("Everyone's asleep. Start the next day first.", style = OllType.body, color = colors.inkMuted)
-            } else {
-                if (piece.kind == FurnitureKind.BED) SleepHereButton(viewModel)
-                viewModel.actionsFor(piece).forEach { action ->
-                    val short = viewModel.camp.storage.shortfall(action.costs)
-                    SecondaryButton(
-                        text = action.name,
-                        detail = if (short.isEmpty()) describe(action) else describeShortfall(short),
-                        enabled = short.isEmpty(),
-                        onClick = { viewModel.perform(selection.room, piece, action) },
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
             }
         }
     }
 }
 
-/** Going to bed for the night from the bed itself, same as the "Go to bed" button. */
+/** Going to bed for the night from the bed itself, same as the bar's Bed. */
 @Composable
 private fun SleepHereButton(viewModel: GameViewModel) {
-    SecondaryButton(
-        text = "Sleep for the night",
-        detail = viewModel.partner?.let { if (it.character.asleep) "Starts the next day" else "Then wait for ${it.character.name}" } ?: "Starts the next day",
+    ActionRow(
+        title = "Sleep for the night",
+        icon = OllIcons.sleep,
+        facts = listOf(Fact(viewModel.partner?.let { if (it.character.asleep) "Starts the next day" else "Then wait for ${it.character.name}" } ?: "Starts the next day")),
+        tint = OllTheme.colors.rose,
         onClick = viewModel::sleep,
-        modifier = Modifier.fillMaxWidth(),
     )
 }
 
 private fun comingSoon(kind: ObjectKind): String = "Nothing to do here yet."
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun RoomSheet(room: Room, viewModel: GameViewModel, asleep: Boolean) {
     val colors = OllTheme.colors
-    ModalBottomSheet(
-        onDismissRequest = viewModel::dismissSelection,
-        containerColor = colors.surfaceRaised,
-        contentColor = colors.ink,
-    ) {
-        Column(
-            modifier = Modifier
-                .verticalScroll(rememberScrollState())
-                .padding(start = 16.dp, end = 16.dp, bottom = 32.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Text(room.kind.label, style = OllType.title, color = colors.ink, modifier = Modifier.semantics { heading() })
-            if (room.kind == RoomKind.CABIN) {
-                Text("A real roof. Nights in here restore all your energy.", style = OllType.body, color = colors.inkMuted)
-            }
-            if (asleep) {
-                Text("Everyone's asleep. Start the next day first.", style = OllType.body, color = colors.inkMuted)
+    Sheet(title = room.kind.label, onDismiss = viewModel::dismissSelection) {
+        if (room.kind == RoomKind.CABIN) {
+            Text("A real roof. Nights in here restore all your energy.", style = OllType.body, color = colors.inkMuted)
+        }
+        if (asleep) {
+            Text("Everyone's asleep. Start the next day first.", style = OllType.body, color = colors.inkMuted)
+        } else {
+            if (room.kind == RoomKind.GARDEN) {
+                GardenBeds(room, viewModel)
             } else {
-                if (room.kind == RoomKind.GARDEN) {
-                    GardenBeds(room, viewModel)
-                } else {
-                    SecondaryButton(
-                        text = "Go inside",
-                        detail = "See the room",
-                        onClick = { viewModel.goInside(room) },
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
-                if (room.kind == RoomKind.CABIN) SleepHereButton(viewModel)
-                viewModel.actionsFor(room).forEach { action ->
-                    SecondaryButton(
-                        text = action.name,
-                        detail = describe(action),
-                        onClick = { viewModel.perform(room, action) },
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
+                ActionRow(title = "Go inside", icon = OllIcons.inside, facts = listOf(Fact("See the room")), primary = true, onClick = { viewModel.goInside(room) })
+            }
+            if (room.kind == RoomKind.CABIN) SleepHereButton(viewModel)
+            viewModel.actionsFor(room).forEach { action ->
+                ActionRow(title = action.name, icon = OllIcons.of(action), facts = factsOf(action), tint = tintFor(action), onClick = { viewModel.perform(room, action) })
             }
         }
     }
 }
 
 /** Tapping empty grass: offer to build a room there, with the outline already shown on the map. */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun GroundSheet(ground: Selection.Ground, viewModel: GameViewModel, asleep: Boolean) {
     val colors = OllTheme.colors
     val options = viewModel.buildOptions()
-    ModalBottomSheet(
-        onDismissRequest = viewModel::dismissSelection,
-        containerColor = colors.surfaceRaised,
-        contentColor = colors.ink,
-        scrimColor = Color.Transparent,
-    ) {
-        Column(
-            modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 32.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Text("Build here?", style = OllType.title, color = colors.ink, modifier = Modifier.semantics { heading() })
-            when {
-                asleep -> Text("Everyone's asleep. Start the next day first.", style = OllType.body, color = colors.inkMuted)
-                options.isEmpty() -> Text("Every room is built. Time to decorate.", style = OllType.body, color = colors.inkMuted)
-                else -> {
-                    val first = options.first()
-                    Text(
-                        "The outline shows where the ${first.label.lowercase()} would go (${first.width} × ${first.height} tiles). Its top-left corner sits where you tapped.",
-                        style = OllType.body,
-                        color = colors.inkMuted,
+    Sheet(title = "Build here?", onDismiss = viewModel::dismissSelection, scrim = false) {
+        when {
+            asleep -> Text("Everyone's asleep. Start the next day first.", style = OllType.body, color = colors.inkMuted)
+            options.isEmpty() -> Text("Every room is built. Time to decorate.", style = OllType.body, color = colors.inkMuted)
+            else -> {
+                val first = options.first()
+                Text(
+                    "The outline shows where the ${first.label.lowercase()} would go (${first.width} × ${first.height} tiles). Its top-left corner sits where you tapped.",
+                    style = OllType.body,
+                    color = colors.inkMuted,
+                )
+                val buildable = options.firstOrNull { viewModel.placement(it, ground.x, ground.y) == Placement.Ok && viewModel.camp.storage.shortfall(it.costs).isEmpty() }
+                options.forEach { kind ->
+                    val placement = viewModel.placement(kind, ground.x, ground.y)
+                    val short = viewModel.camp.storage.shortfall(kind.costs)
+                    ActionRow(
+                        title = "Build the ${kind.label.lowercase()} here",
+                        icon = if (kind == RoomKind.GARDEN) OllIcons.garden else OllIcons.build,
+                        facts = factsOf(Building.actionFor(kind)),
+                        problem = when {
+                            placement != Placement.Ok -> placementProblem(placement)
+                            short.isNotEmpty() -> describeShortfall(short)
+                            else -> null
+                        },
+                        enabled = placement == Placement.Ok && short.isEmpty(),
+                        primary = kind == buildable,
+                        onClick = { viewModel.build(kind, ground.x, ground.y) },
                     )
-                    options.forEach { kind ->
-                        val placement = viewModel.placement(kind, ground.x, ground.y)
-                        val short = viewModel.camp.storage.shortfall(kind.costs)
-                        val ready = placement == Placement.Ok && short.isEmpty()
-                        SecondaryButton(
-                            text = "Build the ${kind.label.lowercase()} here",
-                            detail = when {
-                                placement != Placement.Ok -> placementProblem(placement)
-                                short.isNotEmpty() -> describeShortfall(short)
-                                else -> describe(Building.actionFor(kind))
-                            },
-                            enabled = ready,
-                            onClick = { viewModel.build(kind, ground.x, ground.y) },
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                    }
                 }
             }
         }
@@ -1036,16 +994,16 @@ private fun ChestContents(storage: Storage) {
         )
         return
     }
-    Resource.entries.forEach { resource ->
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(resource.label, style = OllType.body, color = colors.ink)
+    Resource.entries.filter { storage[it] > 0 }.forEach { resource ->
+        Row(Modifier.fillMaxWidth().heightIn(min = 32.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+            OllIcons.of(resource)?.let { Icon(it, contentDescription = null, tint = colors.inkMuted, modifier = Modifier.size(20.dp)) } ?: Spacer(Modifier.size(20.dp))
+            Text(resource.label, style = OllType.body, color = colors.ink, modifier = Modifier.weight(1f))
             Text("${storage[resource]}", style = OllType.stat, color = colors.ink)
         }
     }
 }
 
-/** Tapping a person: who they are, what they're up to, and what they need. */
-@OptIn(ExperimentalMaterial3Api::class)
+/** Tapping a person (or Me, or Together, in the bar): who they are, how they're doing, and what you can do. */
 @Composable
 private fun PersonSheet(playerId: String, viewModel: GameViewModel) {
     val colors = OllTheme.colors
@@ -1054,184 +1012,205 @@ private fun PersonSheet(playerId: String, viewModel: GameViewModel) {
     val isMe = playerId == viewModel.myPlayerId
     val word = moodWord(person.needs.mood)
     val low = Need.entries.filter { person.needs[it] < 30 }
+    val activity = player.activity
+    val status = when {
+        person.asleep -> "Asleep"
+        activity != null -> activity.label
+        else -> "Up · ${formatTime(person.clock.minute)}"
+    }
 
-    ModalBottomSheet(
-        onDismissRequest = viewModel::dismissSelection,
-        containerColor = colors.surfaceRaised,
-        contentColor = colors.ink,
-    ) {
-        Column(
-            modifier = Modifier
-                .verticalScroll(rememberScrollState())
-                .padding(start = 16.dp, end = 16.dp, bottom = 32.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    if (isMe) "${person.name} (you)" else person.name,
-                    style = OllType.title,
-                    color = colors.ink,
-                    modifier = Modifier.semantics { heading() },
-                )
-                Text(
-                    word,
-                    style = OllType.caption,
-                    color = if (word == "Grumpy") colors.berry else colors.onFill,
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(
-                            when (word) {
-                                "Cheerful" -> colors.leaf
-                                "Fine" -> colors.honey
-                                else -> colors.surfaceSunken
-                            },
-                        )
-                        .padding(horizontal = 8.dp, vertical = 2.dp),
-                )
-            }
-
-            val activity = player.activity
-            val status = when {
-                person.asleep -> "Asleep"
-                activity != null -> activity.label
-                else -> "Up · ${formatTime(person.clock.minute)}"
-            }
-            Text("Day ${person.clock.day} · $status", style = OllType.body, color = colors.inkMuted)
-
+    Sheet(title = person.name, note = if (isMe) "You · $status" else status, onDismiss = viewModel::dismissSelection) {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            StatusChip(
+                word,
+                fill = when (word) {
+                    "Cheerful" -> colors.leaf
+                    "Fine" -> colors.honey
+                    else -> colors.surfaceSunken
+                },
+            )
             if (low.isNotEmpty()) {
                 val who = if (isMe) "You need" else "${person.name} needs"
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text("LOW", style = OllType.tag, color = colors.berry)
-                    Text(
-                        "$who ${low.joinToString(" and ") { it.label.lowercase() }}." + if (!isMe) " A hand would help." else "",
-                        style = OllType.body,
-                        color = colors.ink,
-                    )
-                }
+                Text("LOW", style = OllType.tag, color = colors.berry)
+                Text(
+                    "$who ${low.joinToString(" and ") { it.label.lowercase() }}." + if (!isMe) " A hand would help." else "",
+                    style = OllType.body,
+                    color = colors.ink,
+                )
             }
+        }
 
-            Text("Needs", style = OllType.heading, color = colors.ink, modifier = Modifier.semantics { heading() })
-            Need.entries.forEach { need -> NeedBar(label = need.label, value = person.needs[need]) }
-            Text("Skills arrive with careers.", style = OllType.caption, color = colors.inkMuted)
+        if (!isMe) {
+            Section("Say hello")
+            Gesture.entries.forEach { gesture ->
+                val blocked = viewModel.gestureProblem(gesture)
+                ActionRow(
+                    title = gesture.label,
+                    icon = OllIcons.of(gesture),
+                    facts = listOf(Fact(if (viewModel.gestureUsedToday(gesture)) "Again, just because" else "+${gesture.social} Social", OllIcons.of(Need.SOCIAL))),
+                    problem = blocked,
+                    enabled = blocked == null,
+                    tint = colors.sky,
+                    onClick = { viewModel.greet(gesture) },
+                )
+            }
+            val problem = viewModel.walkProblem()
+            when {
+                viewModel.walkInviteFrom?.id == playerId -> PrimaryButton(
+                    text = "Go for a walk",
+                    detail = "1h · +12 Fun · +${Walks.TOGETHER_SOCIAL} Social",
+                    onClick = { viewModel.dismissSelection(); viewModel.acceptWalk() },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                viewModel.askedForWalk -> SecondaryButton(
+                    text = "Call off the walk",
+                    onClick = { viewModel.dismissSelection(); viewModel.declineWalk() },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                else -> PrimaryButton(
+                    text = "Ask ${person.name} for a walk",
+                    detail = problem ?: "1h · +12 Fun · +${Walks.TOGETHER_SOCIAL} Social",
+                    enabled = problem == null,
+                    onClick = viewModel::askForWalk,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        }
 
-            if (isMe) {
-                val look = viewModel.lookFor(playerId)
-                Text("Your look", style = OllType.heading, color = colors.ink, modifier = Modifier.semantics { heading() })
-                Text("How you appear in the 3D view, to both of you.", style = OllType.caption, color = colors.inkMuted)
-                LookRow("Body", listOf("Body 1" to 0, "Body 2" to 1), look.body) { viewModel.chooseLook(look.copy(body = it)) }
-                val outfits = if (look.body == 1) listOf("Casual", "Formal", "Worker") else listOf("Hoodie", "Casual", "Farmer")
-                LookRow("Outfit", outfits.mapIndexed { i, name -> name to i }, look.outfit) { viewModel.chooseLook(look.copy(outfit = it)) }
-                // Skin tones in order from deepest to lightest (stored as deep 0, brown 2, tan 3, light 1).
-                LookRow("Skin", listOf("Deep" to 0, "Brown" to 2, "Tan" to 3, "Light" to 1), look.skin) { viewModel.chooseLook(look.copy(skin = it)) }
-            }
-            if (!isMe) {
-                Text("Say hello", style = OllType.heading, color = colors.ink, modifier = Modifier.semantics { heading() })
-                Gesture.entries.forEach { gesture ->
-                    val blocked = viewModel.gestureProblem(gesture)
-                    SecondaryButton(
-                        text = gesture.label,
-                        detail = blocked ?: if (viewModel.gestureUsedToday(gesture)) "Again, just because" else "+${gesture.social} Social",
-                        enabled = blocked == null,
-                        onClick = { viewModel.greet(gesture) },
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
-                val problem = viewModel.walkProblem()
-                when {
-                    viewModel.walkInviteFrom?.id == playerId -> PrimaryButton(
-                        text = "Go for a walk",
-                        detail = "1h · +12 Fun · +${Walks.TOGETHER_SOCIAL} Social",
-                        onClick = { viewModel.dismissSelection(); viewModel.acceptWalk() },
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    viewModel.askedForWalk -> SecondaryButton(
-                        text = "Call off the walk",
-                        onClick = { viewModel.dismissSelection(); viewModel.declineWalk() },
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    else -> PrimaryButton(
-                        text = "Ask ${person.name} for a walk",
-                        detail = problem ?: "1h · +12 Fun · +${Walks.TOGETHER_SOCIAL} Social",
-                        enabled = problem == null,
-                        onClick = viewModel::askForWalk,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
-            }
+        Section("Needs")
+        Need.entries.forEach { need -> NeedBar(label = need.label, value = person.needs[need], icon = OllIcons.of(need)) }
+        Text("Skills arrive with careers.", style = OllType.caption, color = colors.inkMuted)
+
+        if (isMe) {
+            val look = viewModel.lookFor(playerId)
+            Section("Your look")
+            Text("How you appear in the 3D view, to both of you.", style = OllType.caption, color = colors.inkMuted)
+            LookRow("Body", listOf("Body 1" to 0, "Body 2" to 1), look.body) { viewModel.chooseLook(look.copy(body = it)) }
+            val outfits = if (look.body == 1) listOf("Casual", "Formal", "Worker") else listOf("Hoodie", "Casual", "Farmer")
+            LookRow("Outfit", outfits.mapIndexed { i, name -> name to i }, look.outfit) { viewModel.chooseLook(look.copy(outfit = it)) }
+            // Skin tones in order from deepest to lightest (stored as deep 0, brown 2, tan 3, light 1).
+            LookRow("Skin", listOf("Deep" to 0, "Brown" to 2, "Tan" to 3, "Light" to 1), look.skin) { viewModel.chooseLook(look.copy(skin = it)) }
         }
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+/** The gear: how this phone shows the game, this world's code, and the way back to the lobby. */
 @Composable
-private fun NeedsSheet(viewModel: GameViewModel, onDismiss: () -> Unit, onBackToLobby: () -> Unit) {
+private fun SettingsSheet(viewModel: GameViewModel, onDismiss: () -> Unit, onBackToLobby: () -> Unit) {
     val colors = OllTheme.colors
-    val character = viewModel.character
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        containerColor = colors.surfaceRaised,
-        contentColor = colors.ink,
-    ) {
-        Column(
-            modifier = Modifier
-                .verticalScroll(rememberScrollState())
-                .padding(start = 16.dp, end = 16.dp, bottom = 32.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Text("${character.name}'s needs", style = OllType.title, color = colors.ink, modifier = Modifier.semantics { heading() })
-            Need.entries.forEach { need -> NeedBar(label = need.label, value = character.needs[need]) }
-            if (BuildConfig.DEBUG) {
-                SecondaryButton(
-                    text = "Debug: fill the chest",
-                    detail = "Test builds only",
-                    onClick = { viewModel.debugFillChest(); onDismiss() },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
+    Sheet(title = "Settings", onDismiss = onDismiss) {
+        SettingSwitch(
+            title = "3D world",
+            detail = if (viewModel.view3d) "Livelier. Turn off on older phones" else "Off: the lighter flat map",
+            icon = if (viewModel.view3d) Icons.Rounded.ViewInAr else Icons.Rounded.Map,
+            checked = viewModel.view3d,
+            onChange = viewModel::chooseView3d,
+        )
+        if (!viewModel.isSolo) {
+            SettingSwitch(
+                title = "Camp news",
+                detail = "Notifications when the game is closed",
+                icon = Icons.Rounded.Notifications,
+                checked = viewModel.campNews,
+                onChange = viewModel::chooseCampNews,
+            )
+        }
+        if (viewModel.isNeighbours) {
+            SettingSwitch(
+                title = "Help yourself",
+                detail = "Your neighbour can gather on your lot",
+                icon = Icons.Rounded.VolunteerActivism,
+                checked = viewModel.helpYourself,
+                onChange = viewModel::chooseHelpYourself,
+            )
+        }
 
-            Text("This world", style = OllType.heading, color = colors.ink, modifier = Modifier.semantics { heading() })
+        Section("This world")
+        Text(
+            if (viewModel.isSolo) {
+                "Your solo game, saved on this phone. To play with someone, start or join a shared world from the lobby."
+            } else {
+                "Code ${viewModel.worldCode}. Share it so a friend can join" +
+                    (viewModel.partnerName?.let { ". You're playing with $it." } ?: ".")
+            },
+            style = OllType.body,
+            color = colors.inkMuted,
+        )
+        SecondaryButton(
+            text = "Back to lobby",
+            detail = "Switch worlds or join a friend",
+            onClick = { onDismiss(); onBackToLobby() },
+            modifier = Modifier.fillMaxWidth(),
+        )
+        if (BuildConfig.DEBUG) {
             SecondaryButton(
-                text = if (viewModel.view3d) "Switch to the flat map" else "Switch to 3D",
-                detail = if (viewModel.view3d) "Lighter on older phones" else "Livelier, needs a newer phone",
-                onClick = { viewModel.chooseView3d(!viewModel.view3d) },
-                modifier = Modifier.fillMaxWidth(),
-            )
-            if (viewModel.isNeighbours) {
-                SecondaryButton(
-                    text = if (viewModel.helpYourself) "Turn off Help yourself" else "Turn on Help yourself",
-                    detail = if (viewModel.helpYourself) "Your neighbour can gather on your lot" else "Let your neighbour gather on your lot",
-                    onClick = { viewModel.chooseHelpYourself(!viewModel.helpYourself) },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
-            if (!viewModel.isSolo) {
-                SecondaryButton(
-                    text = if (viewModel.campNews) "Turn off camp news" else "Turn on camp news",
-                    detail = if (viewModel.campNews) "Notifications when the game is closed" else "Hear when they go to bed or wave",
-                    onClick = { viewModel.chooseCampNews(!viewModel.campNews) },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
-            Text(
-                if (viewModel.isSolo) {
-                    "Your solo game, saved on this phone. To play with someone, start or join a shared world from the lobby."
-                } else {
-                    "Code ${viewModel.worldCode}. Share it so a friend can join" +
-                        (viewModel.partnerName?.let { ". You're playing with $it." } ?: ".")
-                },
-                style = OllType.body,
-                color = colors.inkMuted,
-            )
-            SecondaryButton(
-                text = "Back to lobby",
-                detail = "Switch worlds or join a friend",
-                onClick = { onDismiss(); onBackToLobby() },
+                text = "Debug: fill the chest",
+                detail = "Test builds only",
+                onClick = { viewModel.debugFillChest(); onDismiss() },
                 modifier = Modifier.fillMaxWidth(),
             )
         }
+    }
+}
+
+/** Together, before anyone has joined: the code to send a friend. */
+@Composable
+private fun InviteSheet(viewModel: GameViewModel, onDismiss: () -> Unit) {
+    val colors = OllTheme.colors
+    val context = LocalContext.current
+    Sheet(title = "Together", onDismiss = onDismiss) {
+        if (viewModel.isSolo) {
+            Text("This is your solo game. To play with someone, start or join a shared world from the lobby (Settings, then Back to lobby).", style = OllType.body, color = colors.inkMuted)
+        } else {
+            Text("Nobody has joined yet. Send a friend this code; they type it in under Join a friend.", style = OllType.body, color = colors.inkMuted)
+            Text(
+                viewModel.worldCode,
+                style = OllType.display,
+                color = colors.ink,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(colors.surfaceSunken)
+                    .padding(vertical = 16.dp),
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            )
+            PrimaryButton(
+                text = "Send the code",
+                onClick = {
+                    val send = android.content.Intent(android.content.Intent.ACTION_SEND)
+                        .setType("text/plain")
+                        .putExtra(android.content.Intent.EXTRA_TEXT, "Join my world in Our Little Life. The code is ${viewModel.worldCode}.")
+                    context.startActivity(android.content.Intent.createChooser(send, null))
+                    onDismiss()
+                },
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+    }
+}
+
+/** Bed, from the bar: a moment to mean it, since the day ends for you once you sleep. */
+@Composable
+private fun BedSheet(viewModel: GameViewModel, onDismiss: () -> Unit) {
+    val colors = OllTheme.colors
+    val partner = viewModel.partner
+    val tomorrow = Clock.startOfDay(viewModel.character.clock.day + 1).weekday
+    Sheet(title = "Go to bed?", onDismiss = onDismiss) {
+        Text(
+            when {
+                partner == null -> "$tomorrow starts as soon as you're asleep."
+                partner.character.asleep -> "${partner.character.name} is already asleep, so $tomorrow starts right away."
+                else -> "Your day ends here. $tomorrow starts once ${partner.character.name} is asleep too."
+            },
+            style = OllType.body,
+            color = colors.inkMuted,
+        )
+        PrimaryButton(
+            text = "Go to bed",
+            detail = if (viewModel.character.clock.late) "It's late" else null,
+            onClick = { onDismiss(); viewModel.sleep() },
+            modifier = Modifier.fillMaxWidth(),
+        )
+        SecondaryButton(text = "Stay up", onClick = onDismiss, modifier = Modifier.fillMaxWidth())
     }
 }

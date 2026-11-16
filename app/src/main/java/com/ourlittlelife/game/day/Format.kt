@@ -1,5 +1,7 @@
 package com.ourlittlelife.game.day
 
+import com.ourlittlelife.game.ui.components.Fact
+import com.ourlittlelife.game.ui.components.OllIcons
 import com.ourlittlelife.rules.Action
 import com.ourlittlelife.rules.Resource
 
@@ -47,3 +49,10 @@ fun moodWord(mood: Int): String = when {
     mood >= 40 -> "Fine"
     else -> "Grumpy"
 }
+
+/** The same as [describe], in pieces for an action card: how long, what goes in, what comes out, how you'll feel. */
+fun factsOf(action: Action): List<Fact> =
+    listOf(Fact(formatDuration(action.minutes), OllIcons.time)) +
+        action.costs.map { (resource, amount) -> Fact("-$amount ${resource.label}", OllIcons.of(resource)) } +
+        action.yields.map { (resource, amount) -> Fact("+$amount ${resource.label}", OllIcons.of(resource)) } +
+        action.effects.map { (need, change) -> Fact((if (change > 0) "+" else "") + "$change ${need.label}", OllIcons.of(need)) }

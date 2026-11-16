@@ -23,8 +23,8 @@ android {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a")
         }
         // tools/release.sh publishes this version to friends' phones; bump both before each release.
-        versionCode = 32
-        versionName = "0.25.0"
+        versionCode = 33
+        versionName = "0.26.0"
     }
 
     // Release builds are signed with the key in keystore.properties (never committed; see CLAUDE.md).
@@ -68,6 +68,20 @@ android {
         compose = true
         buildConfig = true
     }
+
+    // Screenshot tests draw the screens on this computer (Robolectric), into app/build/shots.
+    testOptions {
+        unitTests {
+            isIncludeAndroidResources = true
+            all { test ->
+                test.systemProperty("roborazzi.test.record", "true")
+                // This machine needs a short temp folder for Java (see CLAUDE.md).
+                val shortTmp = file("C:/Users/Public/olbuild-tmp")
+                if (shortTmp.exists()) test.jvmArgs("-Djava.io.tmpdir=$shortTmp")
+                test.maxHeapSize = "2g"
+            }
+        }
+    }
 }
 
 kotlin {
@@ -100,5 +114,15 @@ dependencies {
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3)
+    // Icons (Material Symbols Rounded stand in until the pixel set exists); release builds keep only the ones used.
+    implementation(libs.androidx.compose.material.icons)
     debugImplementation(libs.androidx.compose.ui.tooling)
+
+    testImplementation(libs.junit)
+    testImplementation(libs.robolectric)
+    testImplementation(libs.roborazzi)
+    testImplementation(libs.roborazzi.compose)
+    testImplementation(platform(libs.androidx.compose.bom))
+    testImplementation(libs.androidx.compose.ui.test.junit4)
+    debugImplementation(libs.androidx.compose.ui.test.manifest)
 }

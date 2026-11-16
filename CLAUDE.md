@@ -24,6 +24,8 @@ Kotlin, Jetpack Compose, Material 3. Firebase (Auth, Firestore, Storage, Cloud F
 - Write tests before rules code in `core/rules`, and keep them passing.
 - Screens use design-system tokens only: `OllTheme.colors.*` and `OllType.*`. No raw hex colours or ad-hoc text styles in screens.
 - One primary (peach) button per screen. Disabled buttons say what's missing.
+- Build screens from `ui/components`: `ActionRow` for anything you can do (icon, name, what it takes and gives), `PopCard` for anything pressable that floats, `StatChip`/`StatusChip`, `SettingSwitch`, `ChoiceCard`. Icons come only from `OllIcons` (Material Symbols Rounded stand in until the pixel set exists).
+- The main screen is: top line (day, coins, settings), the five need meters, a status strip, the map, and the bottom bar (Me, Together, Build or Furnish, Bed). Notices and cards sit at the bottom of the map. Bed is peach only when it's late or energy is low.
 - Never show state with colour alone: low needs also say "Low".
 - Tap targets at least 48dp. Portrait and landscape both work: in landscape the HUD moves to a side panel and the map fills the rest.
 - Copy is warm, short, sentence case, no emoji in the UI.
@@ -35,6 +37,7 @@ Kotlin, Jetpack Compose, Material 3. Firebase (Auth, Firestore, Storage, Cloud F
 
 - Run rules tests: `./gradlew :core:rules:test`
 - Build debug APK: `./gradlew :app:assembleDebug`
+- Draw the screens on this computer, no phone needed: `./gradlew :app:testDebugUnitTest` writes PNGs to `app/build/shots/` (`app/src/test/.../Screenshots.kt`, Robolectric). Look at them after any UI change, in Day and Night. The 3D view can't be drawn this way; they use the flat map.
 - Install on a connected phone: `adb install -r -t app/build/outputs/apk/debug/app-debug.apk`. Phones on a release build refuse debug builds (different key), so test there with `tools/release.sh --build-only` and `adb install -r dist/OurLittleLife-<version>.apk`.
 - Publish a release to friends' phones: bump `versionCode` and `versionName` in `app/build.gradle.kts`, commit, then `tools/release.sh "What's new"`. It builds the release, signs it, and force-pushes the APK and `latest.json` to the `releases` branch; the game offers the update when it next opens. `tools/release.sh --build-only` makes the signed APK in `dist/` without publishing. Only APKs from the script are signed correctly; a plain `assembleRelease` lacks the rotation proof.
 - Signing: the first phones ran debug builds, so releases are signed with the release key plus `tools/signing/debug-to-release.lineage` (a public proof, signed by the debug key, that the release key replaces it), and with the debug key for Android 8. Phones install them as normal updates and keep their saves. Signing needs `keystore.properties`, the key it points to, and `~/.android/debug.keystore`: never commit them, keep backups outside the repo. Debug builds don't offer updates.

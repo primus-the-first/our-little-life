@@ -36,7 +36,20 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.ui.graphics.Color
+import com.ourlittlelife.game.home.PlacedCharacter
+import com.ourlittlelife.game.home.PlotCanvas
+import com.ourlittlelife.game.home.Sprites
+import com.ourlittlelife.game.ui.components.ActionRow
+import com.ourlittlelife.game.ui.components.ChoiceCard
+import com.ourlittlelife.game.ui.components.Fact
+import com.ourlittlelife.game.ui.components.OllIcons
+import com.ourlittlelife.game.ui.components.PopCard
 import com.ourlittlelife.game.ui.components.PrimaryButton
+import com.ourlittlelife.rules.ObjectKind
+import com.ourlittlelife.rules.StarterPlot
+import com.ourlittlelife.rules.WorldMap
 import com.ourlittlelife.game.ui.components.SecondaryButton
 import com.ourlittlelife.game.ui.theme.OllTheme
 import com.ourlittlelife.game.ui.theme.OllType
@@ -67,6 +80,8 @@ fun SignInScreen(state: Session.SignedOut, onSignIn: (Activity) -> Unit, onPlayS
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Spacer(Modifier.weight(1f))
+        CampScene(Modifier.fillMaxWidth().aspectRatio(1.5f))
+        Spacer(Modifier.height(8.dp))
         Text("Our Little Life", style = OllType.display, color = colors.ink, modifier = Modifier.semantics { heading() })
         Text(
             "A little world for two. Build a home together, one day at a time, from your own phones.",
@@ -94,6 +109,38 @@ fun SignInScreen(state: Session.SignedOut, onSignIn: (Activity) -> Unit, onPlayS
             modifier = Modifier.fillMaxWidth(),
         )
     }
+}
+
+/** A corner of the world to look at before you're in it: the starter camp, with two people by the fire. */
+@Composable
+private fun CampScene(modifier: Modifier = Modifier) {
+    val colors = OllTheme.colors
+    val plot = androidx.compose.runtime.remember { WorldMap.expand(StarterPlot.create()) }
+    val fire = plot.objects.first { it.kind == ObjectKind.CAMPFIRE }
+    PopCard(modifier = modifier, radius = 20.dp) {
+        PlotCanvas(
+            plot = plot,
+            characters = listOf(
+                PlacedCharacter("You", Sprites.jo, fire.x - 1, fire.y, colors.peach),
+                PlacedCharacter("A friend", Sprites.maya, fire.x + 1, fire.y, colors.sky),
+            ),
+            selected = null,
+            ghost = null,
+            focusTile = fire.x to fire.y,
+            follow = false,
+            showYard = false,
+            onTapTile = { _, _ -> },
+            modifier = Modifier.fillMaxSize(),
+        )
+    }
+}
+
+/** Each mode's badge colour, from the design system: Besties honey, Roommates leaf, Partners rose. */
+@Composable
+private fun modeColor(mode: Mode): Color = when (mode) {
+    Mode.BESTIES -> OllTheme.colors.honey
+    Mode.ROOMMATES -> OllTheme.colors.leaf
+    Mode.PARTNERS -> OllTheme.colors.rose
 }
 
 private val modeLines = mapOf(
@@ -130,26 +177,33 @@ fun LobbyScreen(
 
         Text("Your worlds", style = OllType.display, color = colors.ink, modifier = Modifier.semantics { heading() })
         // The solo game is always here: on this phone, no partner needed, playable offline.
-        SecondaryButton(
-            text = "Solo game",
-            detail = state.soloSummary ?: "Start playing on your own",
+        ActionRow(
+            title = "Solo game",
+            icon = OllIcons.me,
+            facts = listOf(Fact(state.soloSummary ?: "Start playing on your own")),
             onClick = onPlaySolo,
             enabled = !state.busy,
-            modifier = Modifier.fillMaxWidth(),
+            onScreen = true,
         )
 
         if (hasWorlds) {
             state.worlds.forEach { world ->
-                SecondaryButton(
-                    text = world.partnerName?.let { "With $it" } ?: if (world.needsUpdate) "World ${world.code}" else "Waiting for a friend",
-                    detail = when {
-                        world.needsUpdate -> "Needs the latest version"
-                        world.partnerName != null -> "${world.mode.label} · Day ${world.day}"
-                        else -> "Code ${world.code}"
-                    },
+                ActionRow(
+                    title = world.partnerName?.let { "With $it" } ?: if (world.needsUpdate) "World ${world.code}" else "Waiting for a friend",
+                    icon = OllIcons.together,
+                    facts = listOf(
+                        Fact(
+                            when {
+                                world.needsUpdate -> "Needs the latest version"
+                                world.partnerName != null -> "${world.mode.label} · Day ${world.day}"
+                                else -> "${world.mode.label} · Code ${world.code}"
+                            },
+                        ),
+                    ),
+                    tint = modeColor(world.mode),
                     onClick = { onOpen(world.id) },
                     enabled = !state.busy,
-                    modifier = Modifier.fillMaxWidth(),
+                    onScreen = true,
                 )
             }
             Spacer(Modifier.height(8.dp))
@@ -167,54 +221,37 @@ fun LobbyScreen(
             color = colors.inkMuted,
         )
 
-        Column(Modifier.selectableGroup(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(Modifier.selectableGroup(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Mode.entries.forEach { option ->
-                val selected = option == mode
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 48.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(colors.surfaceRaised)
-                        .border(2.dp, if (selected) colors.ink else colors.line, RoundedCornerShape(12.dp))
-                        .selectable(selected = selected, role = Role.RadioButton, onClick = { mode = option })
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
-                    verticalArrangement = Arrangement.spacedBy(2.dp),
-                ) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text(option.label, style = OllType.heading, color = colors.ink)
-                        if (selected) Text("Chosen", style = OllType.tag, color = colors.ink)
-                    }
-                    Text(modeLines.getValue(option), style = OllType.body, color = colors.inkMuted)
-                }
+                ChoiceCard(
+                    title = option.label,
+                    detail = modeLines.getValue(option),
+                    chosen = option == mode,
+                    onClick = { mode = option },
+                    badge = modeColor(option),
+                    icon = OllIcons.together,
+                )
             }
         }
 
-        Text("Where you live", style = OllType.heading, color = colors.ink, modifier = Modifier.semantics { heading() })
-        Column(Modifier.selectableGroup(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            listOf(
-                false to ("Live together" to "One home and one chest, shared"),
-                true to ("Next door" to "A lot, a camp and a chest each. Visit any time"),
-            ).forEach { (option, words) ->
-                val selected = option == neighbours
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 48.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(colors.surfaceRaised)
-                        .border(2.dp, if (selected) colors.ink else colors.line, RoundedCornerShape(12.dp))
-                        .selectable(selected = selected, role = Role.RadioButton, onClick = { neighbours = option })
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
-                    verticalArrangement = Arrangement.spacedBy(2.dp),
-                ) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text(words.first, style = OllType.heading, color = colors.ink)
-                        if (selected) Text("Chosen", style = OllType.tag, color = colors.ink)
-                    }
-                    Text(words.second, style = OllType.body, color = colors.inkMuted)
-                }
-            }
+        Text("Where you live", style = OllType.heading, color = colors.ink, modifier = Modifier.padding(top = 8.dp).semantics { heading() })
+        Column(Modifier.selectableGroup(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            ChoiceCard(
+                title = "Live together",
+                detail = "One home and one chest, shared",
+                chosen = !neighbours,
+                onClick = { neighbours = false },
+                badge = colors.peach,
+                icon = OllIcons.inside,
+            )
+            ChoiceCard(
+                title = "Next door",
+                detail = "A lot, a camp and a chest each. Visit any time",
+                chosen = neighbours,
+                onClick = { neighbours = true },
+                badge = colors.sky,
+                icon = OllIcons.nextDoor,
+            )
         }
 
         // With worlds listed above, creating another is a secondary choice; for a first world it's the main one.
