@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <paths>
     <cache-path name="updates" path="updates/" />
+    <!-- A photo being taken for the private side, handed to the camera and deleted straight after. -->
+    <cache-path name="private" path="private/" />
 </paths>

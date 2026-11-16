@@ -20,12 +20,16 @@ interface WorldSource {
 
     /** Applies [change] to the latest world and saves it; [change] returns null for "can't happen". Returns the world as it now stands. */
     suspend fun update(change: (World) -> World?): World
+
+    /** Where this world's private photos and voice messages are kept; null where there's nowhere (the solo game). */
+    val media: PrivateMedia? get() = null
 }
 
 class SharedWorldSource(private val store: WorldStore, private val worldId: String) : WorldSource {
     override val solo = false
     override fun observe(): Flow<World> = store.observe(worldId)
     override suspend fun update(change: (World) -> World?): World = store.update(worldId, change)
+    override val media: PrivateMedia = FirestoreMedia(worldId)
 }
 
 /**

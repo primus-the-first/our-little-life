@@ -64,6 +64,35 @@ import com.ourlittlelife.game.ui.components.SettingSwitch
 import com.ourlittlelife.game.ui.theme.OllTheme
 import com.ourlittlelife.game.ui.theme.OllType
 import com.ourlittlelife.game.day.formatDuration
+import android.Manifest
+import android.graphics.BitmapFactory
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.material.icons.rounded.Image
+import androidx.compose.material.icons.rounded.Mic
+import androidx.compose.material.icons.rounded.PhotoCamera
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Stop
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.produceState
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.core.content.FileProvider
+import com.ourlittlelife.game.privacy.Media
+import com.ourlittlelife.game.privacy.VoicePlayer
+import com.ourlittlelife.game.privacy.VoiceRecorder
+import com.ourlittlelife.rules.Note
+import java.io.File
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import com.ourlittlelife.rules.Moment
 import com.ourlittlelife.rules.MomentProblem
 import com.ourlittlelife.rules.Private
@@ -78,10 +107,13 @@ fun PrivateSpace(viewModel: GameViewModel, onClose: () -> Unit) {
     val context = LocalContext.current
     var unlocked by remember { mutableStateOf(false) }
 
+    // Out choosing or taking a photo for a note: that's still you, so it doesn't lock.
+    var away by remember { mutableStateOf(false) }
+
     // Leaving the game locks it again.
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     DisposableEffect(lifecycle) {
-        val observer = LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_STOP) onClose() }
+        val observer = LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_STOP && !away) onClose() }
         lifecycle.addObserver(observer)
         onDispose { lifecycle.removeObserver(observer) }
     }
@@ -115,7 +147,7 @@ fun PrivateSpace(viewModel: GameViewModel, onClose: () -> Unit) {
                     },
                 )
             } else {
-                Inside(viewModel)
+                Inside(viewModel, onAway = { away = it })
             }
         }
     }
@@ -221,7 +253,7 @@ private fun Gate(onUnlocked: () -> Unit, onReset: () -> Unit) {
 }
 
 @Composable
-private fun Inside(viewModel: GameViewModel) {
+private fun Inside(viewModel: GameViewModel, onAway: (Boolean) -> Unit) {
     val colors = OllTheme.colors
     val partner = viewModel.partnerName ?: "your partner"
 
@@ -308,26 +340,159 @@ private fun Inside(viewModel: GameViewModel) {
     }
 
     Section("Notes")
-    Text("Only the two of you can read these. They live in your world, not in the app.", style = OllType.caption, color = colors.inkMuted)
-    var draft by rememberSaveable { mutableStateOf("") }
+    Text("Words, photos and voice messages only the two of you can open. They're kept with your world, not in the app.", style = OllType.caption, color = colors.inkMuted)
+    val player = remember { VoicePlayer() }
+    var playing by remember { mutableStateOf<String?>(null) }
+    DisposableEffect(Unit) { onDispose { player.stop() } }
     viewModel.notes.forEach { note ->
-        val mine = note.from == viewModel.myPlayerId
-        Row(
-            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(if (mine) colors.peach else colors.surfaceRaised).padding(start = 12.dp, top = 8.dp, bottom = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
+        NoteBubble(
+            note = note,
+            viewModel = viewModel,
+            partner = partner,
+            playing = playing == note.id,
+            onPlay = { bytes ->
+                playing = note.id
+                player.play(bytes) { playing = null }
+            },
+            onStop = {
+                player.stop()
+                playing = null
+            },
+        )
+    }
+    Composer(viewModel, partner, onAway)
+
+    Section("This side of the game")
+    SettingSwitch(
+        title = "Private side",
+        detail = "Turning it off turns it off for both of you",
+        icon = Icons.Rounded.Lock,
+        checked = viewModel.myAdult,
+        onChange = viewModel::choosePrivate,
+    )
+    Spacer(Modifier.height(16.dp))
+}
+
+/** One note: whose it is, then its photo or voice message if it has one, then its words. */
+@Composable
+private fun NoteBubble(note: Note, viewModel: GameViewModel, partner: String, playing: Boolean, onPlay: (ByteArray) -> Unit, onStop: () -> Unit) {
+    val colors = OllTheme.colors
+    val mine = note.from == viewModel.myPlayerId
+    val on = if (mine) colors.onFill else colors.ink
+    val quiet = if (mine) colors.onFill else colors.inkMuted
+    val scope = rememberCoroutineScope()
+    Row(
+        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(if (mine) colors.peach else colors.surfaceRaised).padding(start = 12.dp, top = 8.dp, bottom = 8.dp),
+        verticalAlignment = Alignment.Top,
+    ) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(if (mine) "You" else partner, style = OllType.caption, color = quiet)
+            note.photo?.let { id ->
+                val image by produceState<ImageBitmap?>(initialValue = null, id) {
+                    value = viewModel.mediaBytes(id)?.let { BitmapFactory.decodeByteArray(it, 0, it.size) }?.asImageBitmap()
+                }
+                val loaded = image
+                if (loaded != null) {
+                    Image(
+                        bitmap = loaded,
+                        contentDescription = if (mine) "A photo from you" else "A photo from $partner",
+                        contentScale = ContentScale.FillWidth,
+                        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)),
+                    )
+                } else {
+                    Text("Opening the photo…", style = OllType.caption, color = quiet)
+                }
+            }
+            note.voice?.let { id ->
+                PopCard(
+                    onClick = {
+                        if (playing) onStop()
+                        else scope.launch { viewModel.mediaBytes(id)?.let(onPlay) }
+                    },
+                    color = if (mine) colors.surfaceRaised else colors.surface,
+                    onClickLabel = if (playing) "Stop" else "Play",
+                ) {
+                    Row(
+                        modifier = Modifier.heightIn(min = 48.dp).padding(horizontal = 12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(if (playing) Icons.Rounded.Stop else Icons.Rounded.PlayArrow, contentDescription = null, tint = colors.ink, modifier = Modifier.size(22.dp))
+                        Text(if (playing) "Playing" else "Voice message", style = OllType.button, color = colors.ink)
+                        Text("%d:%02d".format(note.seconds / 60, note.seconds % 60), style = OllType.stat, color = colors.inkMuted)
+                    }
+                }
+            }
+            if (note.text.isNotEmpty()) Text(note.text, style = OllType.body, color = on)
+        }
+        Box(
+            modifier = Modifier.size(48.dp).clip(RoundedCornerShape(12.dp)).clickable(role = Role.Button, onClickLabel = "Delete for both of you") { viewModel.deleteNote(note.id) },
+            contentAlignment = Alignment.Center,
         ) {
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(if (mine) "You" else partner, style = OllType.caption, color = if (mine) colors.onFill else colors.inkMuted)
-                Text(note.text, style = OllType.body, color = if (mine) colors.onFill else colors.ink)
-            }
-            Box(
-                modifier = Modifier.size(48.dp).clip(RoundedCornerShape(12.dp)).clickable(role = Role.Button, onClickLabel = "Delete for both of you") { viewModel.deleteNote(note.id) },
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(Icons.Rounded.Delete, contentDescription = "Delete this note for both of you", tint = if (mine) colors.onFill else colors.inkMuted, modifier = Modifier.size(20.dp))
-            }
+            Icon(Icons.Rounded.Delete, contentDescription = "Delete this note for both of you", tint = quiet, modifier = Modifier.size(20.dp))
         }
     }
+}
+
+/**
+ * Writing a note, or sending a photo (chosen or taken now) or a voice message of up to a minute.
+ * Photos are shrunk and stripped of where and when they were taken before they leave the phone;
+ * nothing is left behind in the phone's gallery or storage.
+ */
+@Composable
+private fun Composer(viewModel: GameViewModel, partner: String, onAway: (Boolean) -> Unit) {
+    val colors = OllTheme.colors
+    val context = LocalContext.current
+    var draft by rememberSaveable { mutableStateOf("") }
+    val recorder = remember { VoiceRecorder(context) }
+    var recordingSince by remember { mutableStateOf<Long?>(null) }
+    var seconds by remember { mutableIntStateOf(0) }
+    var micRefused by remember { mutableStateOf(false) }
+    DisposableEffect(Unit) {
+        onDispose {
+            recorder.cancel()
+            Media.clearScratch(context)
+        }
+    }
+
+    fun sendVoice() {
+        recordingSince = null
+        recorder.finish()?.let { (bytes, length) -> viewModel.leaveVoice(bytes, length) }
+    }
+    LaunchedEffect(recordingSince) {
+        val since = recordingSince ?: return@LaunchedEffect
+        while (true) {
+            seconds = ((System.currentTimeMillis() - since) / 1000).toInt()
+            if (seconds >= Private.VOICE_SECONDS) {
+                sendVoice()
+                break
+            }
+            delay(250)
+        }
+    }
+
+    val sendPhoto = { uri: Uri, after: () -> Unit ->
+        val caption = draft
+        draft = ""
+        viewModel.leavePhoto(caption) { Media.shrinkPhoto(context, uri).also { after() } }
+    }
+    val choose = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        onAway(false)
+        if (uri != null) sendPhoto(uri) {}
+    }
+    // The camera writes into this app's own scratch folder; the picture is deleted as soon as it's been shrunk.
+    val shot = remember { File(Media.scratch(context), "shot.jpg") }
+    var shotUri by remember { mutableStateOf<Uri?>(null) }
+    val camera = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { taken ->
+        onAway(false)
+        val uri = shotUri
+        if (taken && uri != null) sendPhoto(uri) { shot.delete() } else shot.delete()
+    }
+    val microphone = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        micRefused = !granted
+        if (granted && recorder.start()) recordingSince = System.currentTimeMillis()
+    }
+
     OutlinedTextField(
         value = draft,
         onValueChange = { draft = it.take(Private.NOTE_LENGTH) },
@@ -342,13 +507,57 @@ private fun Inside(viewModel: GameViewModel) {
         modifier = Modifier.fillMaxWidth(),
     )
 
-    Section("This side of the game")
-    SettingSwitch(
-        title = "Private side",
-        detail = "Turning it off turns it off for both of you",
-        icon = Icons.Rounded.Lock,
-        checked = viewModel.myAdult,
-        onChange = viewModel::choosePrivate,
-    )
-    Spacer(Modifier.height(16.dp))
+    if (!viewModel.canShareMedia) return
+    if (recordingSince != null) {
+        PopCard(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Rounded.Mic, contentDescription = null, tint = colors.berry, modifier = Modifier.size(22.dp))
+                    Text("Recording", style = OllType.heading, color = colors.ink, modifier = Modifier.weight(1f))
+                    Text("%d:%02d of 1:00".format(seconds / 60, seconds % 60), style = OllType.stat, color = colors.ink)
+                }
+                PrimaryButton(text = "Send", onClick = ::sendVoice, modifier = Modifier.fillMaxWidth())
+                SecondaryButton(text = "Throw it away", onClick = { recordingSince = null; recorder.cancel() }, modifier = Modifier.fillMaxWidth())
+            }
+        }
+    } else {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            MediaButton("Photo", Icons.Rounded.Image, enabled = !viewModel.sendingMedia) {
+                onAway(true)
+                choose.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+            }
+            MediaButton("Camera", Icons.Rounded.PhotoCamera, enabled = !viewModel.sendingMedia) {
+                runCatching { FileProvider.getUriForFile(context, "${context.packageName}.updates", shot) }
+                    .onSuccess { uri ->
+                        shotUri = uri
+                        onAway(true)
+                        camera.launch(uri)
+                    }
+            }
+            MediaButton("Voice", Icons.Rounded.Mic, enabled = !viewModel.sendingMedia) {
+                microphone.launch(Manifest.permission.RECORD_AUDIO)
+            }
+        }
+    }
+    when {
+        viewModel.sendingMedia -> Text("Sending…", style = OllType.caption, color = colors.inkMuted)
+        micRefused -> Text("Voice messages need the microphone. You can allow it in the phone's settings for this app.", style = OllType.caption, color = colors.ink)
+        viewModel.message != null -> Text(viewModel.message.orEmpty(), style = OllType.caption, color = colors.ink)
+        else -> Text("A photo's caption is whatever you've typed above. Voice messages run up to a minute.", style = OllType.caption, color = colors.inkMuted)
+    }
+}
+
+@Composable
+private fun RowScope.MediaButton(label: String, icon: androidx.compose.ui.graphics.vector.ImageVector, enabled: Boolean, onClick: () -> Unit) {
+    val colors = OllTheme.colors
+    PopCard(modifier = Modifier.weight(1f), onClick = onClick, enabled = enabled) {
+        Column(
+            modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(vertical = 8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(2.dp, Alignment.CenterVertically),
+        ) {
+            Icon(icon, contentDescription = null, tint = if (enabled) colors.ink else colors.inkMuted, modifier = Modifier.size(22.dp))
+            Text(label, style = OllType.caption, color = if (enabled) colors.ink else colors.inkMuted)
+        }
+    }
 }

@@ -5,6 +5,8 @@
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <!-- Camp news while the game is closed (notify/CampNews.kt). -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Voice messages on the private side. Asked for only when you first record one. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
     <application
         android:allowBackup="false"

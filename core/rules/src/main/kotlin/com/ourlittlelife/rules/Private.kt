@@ -23,9 +23,24 @@ enum class Moment(val label: String, val minutes: Int, val bond: Int, val needsB
 /** Why a moment can't be asked for right now. */
 enum class MomentProblem { OFF, ASLEEP, APART, BOND, PLACE }
 
-/** A note one of you left for the other in the private space. */
+/** What a note can carry besides words. */
+enum class NoteMedia { PHOTO, VOICE }
+
+/**
+ * A note one of you left for the other in the private space. A photo or a voice message is a note too:
+ * [photo] or [voice] is the id of its file, which is kept apart from the world (see the app's PrivateMedia),
+ * [text] is its caption, and [seconds] is how long a voice message runs.
+ */
 @Serializable
-data class Note(val id: String, val from: String, val text: String, val at: Long)
+data class Note(
+    val id: String,
+    val from: String,
+    val text: String,
+    val at: Long,
+    val photo: String? = null,
+    val voice: String? = null,
+    val seconds: Int = 0,
+)
 
 /**
  * The private side of a Partners world. It exists only when both players have opted in, and either can
@@ -37,6 +52,9 @@ object Private {
     const val NOTE_LENGTH = 500
     const val NOTES_KEPT = 60
     const val BOND_MAX = 100
+
+    /** The longest a voice message can be. */
+    const val VOICE_SECONDS = 60
 
     /** Only Partners worlds have a private side at all. */
     fun offered(world: World): Boolean = world.mode == Mode.PARTNERS
@@ -111,9 +129,31 @@ object Private {
     fun leaveNote(world: World, from: String, text: String, now: Long): World? {
         val clean = text.trim().take(NOTE_LENGTH)
         if (!on(world) || clean.isEmpty()) return null
-        val id = "n${(world.notes.maxOfOrNull { it.id.drop(1).toLongOrNull() ?: 0 } ?: 0) + 1}"
-        return world.copy(notes = (world.notes + Note(id, from, clean, now)).takeLast(NOTES_KEPT))
+        return world.copy(notes = (world.notes + Note(nextNoteId(world), from, clean, now)).takeLast(NOTES_KEPT))
     }
+
+    /** Leaves a photo or a voice message whose file is already saved as [mediaId]. Null while the private side is off. */
+    fun leaveMedia(world: World, from: String, kind: NoteMedia, mediaId: String, now: Long, caption: String = "", seconds: Int = 0): World? {
+        if (!on(world)) return null
+        val note = Note(
+            id = nextNoteId(world),
+            from = from,
+            text = caption.trim().take(NOTE_LENGTH),
+            at = now,
+            photo = mediaId.takeIf { kind == NoteMedia.PHOTO },
+            voice = mediaId.takeIf { kind == NoteMedia.VOICE },
+            seconds = if (kind == NoteMedia.VOICE) seconds.coerceIn(0, VOICE_SECONDS) else 0,
+        )
+        return world.copy(notes = (world.notes + note).takeLast(NOTES_KEPT))
+    }
+
+    /** The files that [before]'s notes pointed at and [after]'s no longer do: deleted notes, and old ones that made room. */
+    fun orphans(before: World, after: World): List<String> {
+        val kept = after.notes.flatMap { listOfNotNull(it.photo, it.voice) }.toSet()
+        return before.notes.flatMap { listOfNotNull(it.photo, it.voice) }.filterNot { it in kept }
+    }
+
+    private fun nextNoteId(world: World): String = "n${(world.notes.maxOfOrNull { it.id.drop(1).toLongOrNull() ?: 0 } ?: 0) + 1}"
 
     /** Deletes a note for both of you. */
     fun deleteNote(world: World, id: String): World = world.copy(notes = world.notes.filterNot { it.id == id })

@@ -33,6 +33,7 @@ Kotlin, Jetpack Compose, Material 3. Firebase (Auth, Firestore, Storage, Cloud F
 - Never commit signing keys, `google-services.json`, or anything under `art/adult/`.
 - Adult mode content exists only in Partners worlds with both players opted in.
 - Adult mode is "the private side" (`core/rules/.../Private.kt`, `home/PrivateScreen.kt`): each player opts in on their own phone, either can turn it off for both, and it sits behind a per-phone PIN on a screen that can't be captured. Moments are asked for and must be accepted; nothing is depicted (time passes, the bond grows). Notifications and anything on the main screen say who, never what. The players' own notes live in the world's saved state. Nothing explicit ever goes in this repo or the APK: both are public.
+- The private side's photos and voice messages are files in Firestore under `worlds/{id}/private/` (`data/PrivateMedia.kt`, members only, each under 900 KB; see `firestore.rules`). Photos are shrunk and re-encoded before upload (`privacy/Media.kt`); voice plays from memory. Nothing is written to the phone's gallery or left in app storage. When `firestore.rules` changes, the user has to publish it in the Firebase console.
 
 ## Commands
 

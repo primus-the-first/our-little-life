@@ -40,6 +40,25 @@ service cloud.firestore {
         && request.resource.data.members == resource.data.members.concat([request.auth.uid]);
 
       allow delete: if false;
+
+      // The private side's photos and voice messages. Only the world's two members can open, add or
+      // delete them; each is one small file; nobody can list or change them.
+      match /private/{mediaId} {
+        function memberOfWorld() {
+          return signedIn() && request.auth.uid in get(/databases/$(database)/documents/worlds/$(worldId)).data.members;
+        }
+
+        allow get, delete: if memberOfWorld();
+
+        allow create: if memberOfWorld()
+          && request.resource.data.keys().hasOnly(['type', 'from', 'at', 'bytes'])
+          && request.resource.data.from == request.auth.uid
+          && request.resource.data.type in ['photo', 'voice']
+          && request.resource.data.bytes is bytes
+          && request.resource.data.bytes.size() < 900000;
+
+        allow update, list: if false;
+      }
     }
 
     match /codes/{code} {

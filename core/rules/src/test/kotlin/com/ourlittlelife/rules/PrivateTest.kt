@@ -178,6 +178,40 @@ class PrivateTest {
     }
 
     @Test
+    fun `a photo or a voice message is a note that points at its file`() {
+        assertNull(Private.leaveMedia(partners, "jo", NoteMedia.PHOTO, "m1", now = 1))
+        val photo = Private.leaveMedia(bothIn, "jo", NoteMedia.PHOTO, "m1", now = 10, caption = "  the lake  ")!!
+        val voice = Private.leaveMedia(photo, "maya", NoteMedia.VOICE, "m2", now = 20, seconds = 12)!!
+        assertEquals(listOf("m1", null), voice.notes.map { it.photo })
+        assertEquals(listOf(null, "m2"), voice.notes.map { it.voice })
+        assertEquals("the lake", voice.notes.first().text)
+        assertEquals(12, voice.notes.last().seconds)
+    }
+
+    @Test
+    fun `a voice message is at most a minute`() {
+        assertEquals(Private.VOICE_SECONDS, Private.leaveMedia(bothIn, "jo", NoteMedia.VOICE, "m", now = 1, seconds = 500)!!.notes.single().seconds)
+    }
+
+    @Test
+    fun `files whose notes are gone are the ones to delete`() {
+        val photo = Private.leaveMedia(bothIn, "jo", NoteMedia.PHOTO, "m1", now = 10)!!
+        val voice = Private.leaveMedia(photo, "maya", NoteMedia.VOICE, "m2", now = 20, seconds = 5)!!
+        assertEquals(listOf("m1"), Private.orphans(voice, Private.deleteNote(voice, voice.notes.first().id)))
+        assertEquals(emptyList(), Private.orphans(photo, voice))
+        // Old notes making room take their files with them.
+        val full = (1..Private.NOTES_KEPT).fold(voice) { w, i -> Private.leaveNote(w, "jo", "n$i", now = 100L + i)!! }
+        assertEquals(setOf("m1", "m2"), Private.orphans(voice, full).toSet())
+    }
+
+    @Test
+    fun `news of a photo gives nothing away either`() {
+        val nudge = Nudges.between(Glance.of(bothIn, "maya"), Glance.of(Private.leaveMedia(bothIn, "jo", NoteMedia.PHOTO, "m1", now = 5)!!, "maya")).single()
+        assertEquals("Jo is thinking of you", nudge.title)
+        assertFalse("photo" in (nudge.title + nudge.text).lowercase())
+    }
+
+    @Test
     fun `it all survives saving`() {
         val busy = Private.leaveNote(Private.ask(bothIn.copy(bond = 12), "jo", Moment.CUDDLE)!!, "maya", "x", now = 5)!!
         assertEquals(busy, Worlds.decode(Worlds.encode(busy)))

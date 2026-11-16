@@ -11,7 +11,9 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
 import com.ourlittlelife.rules.Moment
+import com.ourlittlelife.rules.NoteMedia
 import com.ourlittlelife.rules.Private
+import com.ourlittlelife.game.data.PrivateMedia
 import com.ourlittlelife.game.data.WorldSource
 import com.ourlittlelife.game.data.WorldStore
 import com.ourlittlelife.game.session.LobbyScreen
@@ -69,6 +71,24 @@ class Screenshots {
         private val state = MutableStateFlow(start)
         override fun observe(): Flow<World> = state
         override suspend fun update(change: (World) -> World?): World = (change(state.value) ?: state.value).also { state.value = it }
+        override val media = object : PrivateMedia {
+            override suspend fun put(type: String, from: String, bytes: ByteArray) = "new"
+            override suspend fun get(id: String): ByteArray? = if (id == "p1") picture() else ByteArray(8)
+            override suspend fun delete(id: String) = Unit
+        }
+
+        /** A stand-in photo: an evening sky over a hill. */
+        private fun picture(): ByteArray {
+            val bitmap = android.graphics.Bitmap.createBitmap(640, 400, android.graphics.Bitmap.Config.ARGB_8888)
+            val canvas = android.graphics.Canvas(bitmap)
+            val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+            canvas.drawColor(0xFF39507A.toInt())
+            paint.color = 0xFFF5CB62.toInt()
+            canvas.drawCircle(470f, 130f, 46f, paint)
+            paint.color = 0xFF2E5B3C.toInt()
+            canvas.drawOval(-120f, 280f, 760f, 620f, paint)
+            return java.io.ByteArrayOutputStream().also { bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 85, it) }.toByteArray()
+        }
     }
 
     private fun game(start: World = world()): GameViewModel =
@@ -147,13 +167,17 @@ class Screenshots {
     fun landscape_night() = shot("landscape", night = true)
 
     /** A Partners world, side by side, both in, with a bond and a couple of notes. */
-    private fun partners(bothIn: Boolean = true, asking: Moment? = null): World {
+    private fun partners(bothIn: Boolean = true, asking: Moment? = null, media: Boolean = false): World {
         var w = Private.setMode(world(), Mode.PARTNERS)
         w = w.withPlayer(w.player("them").copy(tileX = w.player("me").tileX + 1, tileY = w.player("me").tileY))
         if (!bothIn) return w
         w = Private.optIn(Private.optIn(w, "me", true)!!, "them", true)!!.copy(bond = 14)
         w = Private.leaveNote(w, "them", "Dinner by the fire tonight?", now = 1)!!
         w = Private.leaveNote(w, "me", "Yes. I'll bring the fish.", now = 2)!!
+        if (media) {
+            w = Private.leaveMedia(w, "them", NoteMedia.PHOTO, "p1", now = 3, caption = "From the hill last night")!!
+            w = Private.leaveMedia(w, "me", NoteMedia.VOICE, "v1", now = 4, seconds = 23)!!
+        }
         return if (asking != null) Private.ask(w, "them", asking)!! else w
     }
 
@@ -179,6 +203,11 @@ class Screenshots {
     @Test fun private_inside_night() = shot("private-inside", night = true, start = partners()) { openPrivate(pin = true) }
 
     @Test fun private_asked_day() = shot("private-asked", night = false, start = partners(asking = Moment.CUDDLE)) { openPrivate(pin = true) }
+
+    @Test fun private_media_night() = shot("private-media", night = true, start = partners(media = true)) {
+        openPrivate(pin = true)
+        compose.onNodeWithText("Voice").performScrollTo()
+    }
 
     @Test fun private_card_night() = shot("private-card", night = true, start = partners(asking = Moment.CUDDLE))
 

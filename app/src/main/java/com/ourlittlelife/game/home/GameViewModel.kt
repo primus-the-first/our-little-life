@@ -38,6 +38,7 @@ import com.ourlittlelife.rules.Mode
 import com.ourlittlelife.rules.Moment
 import com.ourlittlelife.rules.MomentProblem
 import com.ourlittlelife.rules.Note
+import com.ourlittlelife.rules.NoteMedia
 import com.ourlittlelife.rules.Private
 import com.ourlittlelife.rules.Neighbours
 import com.ourlittlelife.rules.ObjectActions
@@ -59,7 +60,9 @@ import com.ourlittlelife.rules.Walks
 import com.ourlittlelife.rules.World
 import com.ourlittlelife.rules.Worlds
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.launch
@@ -260,11 +263,57 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun leaveNote(text: String) {
-        commit { w -> Private.leaveNote(w, myId, text, System.currentTimeMillis()) }
+        commitNotes { w -> Private.leaveNote(w, myId, text, System.currentTimeMillis()) }
     }
 
     fun deleteNote(id: String) {
-        commit { w -> Private.deleteNote(w, id).takeIf { it != w } }
+        commitNotes { w -> Private.deleteNote(w, id).takeIf { it != w } }
+    }
+
+    /** Photos and voice messages need somewhere private to keep their files: a shared world has it. */
+    val canShareMedia: Boolean get() = source.media != null
+
+    /** True while a photo or voice message is on its way up. */
+    var sendingMedia by mutableStateOf(false)
+        private set
+
+    /** [make] reads and shrinks the picture; it runs off the main thread. Null from it means it couldn't be read. */
+    fun leavePhoto(caption: String, make: () -> ByteArray?) = sendMedia(NoteMedia.PHOTO, caption, 0, make)
+
+    fun leaveVoice(bytes: ByteArray, seconds: Int) = sendMedia(NoteMedia.VOICE, "", seconds) { bytes }
+
+    private fun sendMedia(kind: NoteMedia, caption: String, seconds: Int, make: () -> ByteArray?) {
+        val store = source.media ?: return
+        sendingMedia = true
+        viewModelScope.launch {
+            try {
+                val bytes = withContext(Dispatchers.IO) { make() }
+                if (bytes == null) {
+                    message = "That one couldn't be read. Try another."
+                    return@launch
+                }
+                val id = store.put(kind.name.lowercase(), myId, bytes)
+                commitNotes { w -> Private.leaveMedia(w, myId, kind, id, System.currentTimeMillis(), caption, seconds) }
+            } catch (e: Exception) {
+                message = "Couldn't send that. Check your connection and try again."
+            } finally {
+                sendingMedia = false
+            }
+        }
+    }
+
+    /** A photo's or voice message's file, or null if it can't be fetched right now. */
+    suspend fun mediaBytes(id: String): ByteArray? = runCatching { source.media?.get(id) }.getOrNull()
+
+    /** A change to the notes; afterwards, the files of any notes that are gone are deleted too. */
+    private fun commitNotes(change: (World) -> World?) {
+        val before = world
+        commit(onSaved = { applied ->
+            val after = world
+            if (applied && before != null && after != null) {
+                Private.orphans(before, after).forEach { id -> viewModelScope.launch { runCatching { source.media?.delete(id) } } }
+            }
+        }, change)
     }
 
     /** Next-door neighbours: a lot, a camp and a chest each. */
